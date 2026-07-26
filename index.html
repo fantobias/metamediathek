@@ -184,6 +184,20 @@
   .card-poster .no-poster {
     font-size: 40px; opacity: 0.3;
   }
+  /* Gestalteter Platzhalter, wenn TMDB kein Poster liefert
+     (Magazin-/Regionalbeiträge existieren dort nicht) */
+  .poster-ph {
+    width: 100%; height: 100%; min-height: 170px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; padding: 10px; text-align: center;
+    background: linear-gradient(160deg, var(--ph-a, #262b3a) 0%, #14161e 100%);
+  }
+  .poster-ph .ph-icon { font-size: 36px; opacity: 0.9; }
+  .poster-ph .ph-channel {
+    font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: rgba(232,234,237,0.45);
+    overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  }
   .card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .card-header-row {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
@@ -1666,6 +1680,29 @@ async function enrichWithTMDB_background(results) {
 }
 
 // ─── Rendering ───
+
+// Poster-Platzhalter: Senderfarbe + Genre-Symbol statt grauer Filmklappe
+const GENRE_ICONS = {
+  'Krimi': '🕵️', 'Thriller': '🔦', 'Drama': '🎭', 'Komödie': '😄',
+  'Dokumentation': '🎙️', 'Dokumentarfilm': '🎞️', 'Natur': '🌿', 'Geschichte': '🏛️',
+  'Science-Fiction': '🚀', 'Liebesfilm': '❤️', 'Abenteuer': '🧭', 'Familie': '🧸',
+  'Horror': '👻', 'Spielfilm': '🎬', 'Serie': '📺', 'Heimat': '🏔️', 'Politik': '🗳️',
+  'Wissenschaft': '🔬', 'Musik': '🎵', 'Sport': '⚽', 'Kultur': '🎨', 'Sonstiges': '📺'
+};
+const CHANNEL_PH_COLORS = {
+  'ch-ard': '#1a3a5c', 'ch-zdf': '#4a2f14', 'ch-arte': '#3a1f52',
+  'ch-3sat': '#1a3a2a', 'ch-phoenix': '#3a1a1a', 'ch-kika': '#3a3a1a',
+  'ch-default': '#262b3a'
+};
+
+function renderPosterPlaceholder(item, genres, chClass) {
+  const icon = GENRE_ICONS[genres[0]] || '📺';
+  const color = CHANNEL_PH_COLORS[chClass] || CHANNEL_PH_COLORS['ch-default'];
+  return `<div class="poster-ph" style="--ph-a:${color}">
+    <span class="ph-icon">${icon}</span>
+    <span class="ph-channel">${escHtml(item.channel)}</span>
+  </div>`;
+}
 function renderCard(item, idx) {
   // detectGenres pro Item nur einmal berechnen (vorher: bei jedem Re-Render,
   // d.h. während des Enrichments hunderte Male pro Item)
@@ -1690,7 +1727,7 @@ function renderCard(item, idx) {
         <div class="card-poster">
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
-            : `<div class="no-poster">🎬</div>`}
+            : renderPosterPlaceholder(item, genres, chClass)}
         </div>
         <div class="card-body">
           <div class="card-header-row">
