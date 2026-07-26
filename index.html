@@ -1,0 +1,2495 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --accent: #4f8cff;
+    --accent-hover: #6ba0ff;
+    --text: #e8eaed;
+    --text-dim: #9aa0a6;
+    --border: #2e3240;
+    --tag-bg: #2a3042;
+    --green: #34d399;
+    --orange: #fbbf24;
+    --red: #f87171;
+    --gold: #ffd700;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh;
+    min-height: 100dvh; /* iOS: korrekte Höhe trotz dynamischer Adressleiste */
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1a1d27 0%, #1e2a3a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 30px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 24px; font-weight: 700;
+  }
+  .logo-icon { font-size: 28px; }
+  .logo span { color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .stats { display: flex; gap: 20px; font-size: 13px; color: var(--text-dim); }
+  .stats strong { color: var(--text); }
+
+  /* Taste Profile Toggle */
+  .profile-toggle {
+    padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--accent); background: transparent;
+    color: var(--accent); transition: all 0.2s;
+  }
+  .profile-toggle:hover, .profile-toggle.active {
+    background: var(--accent); color: white;
+  }
+
+  /* Taste Profile Panel */
+  .taste-panel {
+    display: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin: 0 30px 0;
+    animation: slideDown 0.3s ease;
+  }
+  .taste-panel.active { display: block; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+  .taste-panel h3 { font-size: 16px; margin-bottom: 8px; }
+  .taste-panel p { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; }
+  .taste-textarea {
+    width: 100%; min-height: 80px; padding: 12px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
+    font-size: 14px; font-family: inherit; resize: vertical; outline: none;
+  }
+  .taste-textarea:focus { border-color: var(--accent); }
+  .taste-textarea::placeholder { color: var(--text-dim); }
+  .taste-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+  .taste-status { font-size: 13px; color: var(--green); margin-left: auto; }
+  .taste-examples {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+  }
+  .taste-example {
+    padding: 4px 12px; border-radius: 16px; font-size: 11px;
+    background: var(--surface2); color: var(--text-dim); border: 1px solid var(--border);
+    cursor: pointer; transition: all 0.2s;
+  }
+  .taste-example:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Search & Filters */
+  .search-bar { display: flex; gap: 10px; margin-bottom: 12px; }
+  .search-input {
+    flex: 1; padding: 10px 16px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text); font-size: 15px;
+    outline: none; transition: border-color 0.2s;
+  }
+  .search-input:focus { border-color: var(--accent); }
+  .search-input::placeholder { color: var(--text-dim); }
+
+  .btn {
+    padding: 10px 20px; border: none; border-radius: var(--radius);
+    cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-gold { background: linear-gradient(135deg, #b8860b, #ffd700); color: #1a1d27; }
+  .btn-gold:hover { background: linear-gradient(135deg, #daa520, #ffe44d); }
+  .btn-sm { padding: 6px 14px; font-size: 12px; }
+
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .filter-select {
+    padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text); font-size: 13px;
+    outline: none; cursor: pointer; min-width: 140px;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+  .filter-label {
+    font-size: 12px; color: var(--text-dim); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text-dim); transition: all 0.2s;
+  }
+  .chip:hover, .chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+  /* Loading */
+  .loading {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 80px 20px; gap: 16px;
+  }
+  .spinner {
+    width: 40px; height: 40px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-sub { font-size: 13px; color: var(--text-dim); }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px; padding: 24px 30px;
+  }
+
+  /* Card */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    cursor: pointer; display: flex; flex-direction: column;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    border-color: var(--accent);
+  }
+  .card:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+    border-color: var(--accent);
+  }
+  .card-poster-row {
+    display: flex; gap: 0;
+  }
+  .card-poster {
+    width: 120px; min-height: 170px; flex-shrink: 0;
+    background: var(--surface2); display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .card-poster img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .card-poster .no-poster {
+    font-size: 40px; opacity: 0.3;
+  }
+  .card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .card-header-row {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+    margin-bottom: 6px;
+  }
+  .card-channel {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 3px 10px; border-radius: 4px;
+    width: fit-content; flex-shrink: 0;
+  }
+  .card-rating {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+  }
+  .rating-star { color: var(--gold); }
+  .rating-value { color: var(--gold); }
+  .rating-na { color: var(--text-dim); font-size: 11px; font-weight: 400; }
+  .card-topic {
+    font-size: 12px; color: var(--accent); font-weight: 500;
+    margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card-title {
+    font-size: 15px; font-weight: 600; line-height: 1.3;
+    margin-bottom: 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-desc {
+    font-size: 12px; color: var(--text-dim); line-height: 1.5;
+    margin-bottom: 8px; flex: 1;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-genres { margin-bottom: 6px; }
+  .card-meta {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    font-size: 11px; color: var(--text-dim);
+    border-top: 1px solid var(--border); padding-top: 8px;
+    margin-top: auto;
+  }
+  .card-meta-item { display: flex; align-items: center; gap: 3px; }
+  .card-actions { display: flex; gap: 8px; padding: 0 14px 14px; }
+  .card-actions .btn { flex: 1; text-align: center; font-size: 12px; padding: 7px; text-decoration: none; }
+
+  /* Taste match indicator */
+  .taste-match {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600; padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .match-high { background: #0d3320; color: var(--green); }
+  .match-med { background: #332d0d; color: var(--orange); }
+  .match-low { background: var(--tag-bg); color: var(--text-dim); }
+
+  /* Channel colors */
+  .ch-ard { background: #1a3a5c; color: #5ba3e6; }
+  .ch-zdf { background: #3a2a1a; color: #e6a05b; }
+  .ch-arte { background: #2a1a3a; color: #b05be6; }
+  .ch-3sat { background: #1a3a2a; color: #5be67a; }
+  .ch-phoenix { background: #3a1a1a; color: #e65b5b; }
+  .ch-kika { background: #3a3a1a; color: #e6e65b; }
+  .ch-default { background: var(--tag-bg); color: var(--text-dim); }
+
+  .genre-tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 4px;
+    background: var(--tag-bg); color: var(--text-dim);
+    display: inline-block; margin-right: 3px; margin-bottom: 3px;
+  }
+  .tmdb-genre { background: #1a2a3a; color: #7ab8e6; }
+
+  /* Pagination */
+  .pagination {
+    display: flex; justify-content: center; align-items: center;
+    gap: 10px; padding: 24px;
+  }
+  .page-info { font-size: 14px; color: var(--text-dim); }
+
+  .empty { text-align: center; padding: 80px 20px; color: var(--text-dim); }
+  .empty-icon { font-size: 48px; margin-bottom: 16px; }
+
+  /* Detail Modal */
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); z-index: 200;
+    justify-content: center; align-items: center; padding: 20px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; max-width: 700px; width: 100%;
+    max-height: 85vh; overflow-y: auto; padding: 28px;
+  }
+  .modal-close {
+    float: right; background: none; border: none; color: var(--text-dim);
+    font-size: 24px; cursor: pointer; padding: 0 4px;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal h2 { font-size: 20px; margin-bottom: 8px; padding-right: 30px; }
+  .modal .card-channel { margin-bottom: 12px; }
+  .modal .meta-row {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    font-size: 13px; color: var(--text-dim); margin-bottom: 16px;
+  }
+  .modal .description {
+    font-size: 14px; line-height: 1.7; color: var(--text); margin-bottom: 20px;
+  }
+  .modal .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .modal .actions .btn { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .modal-poster-row {
+    display: flex; gap: 20px; margin-bottom: 16px;
+  }
+  .modal-poster {
+    width: 160px; flex-shrink: 0; border-radius: 8px; overflow: hidden;
+  }
+  .modal-poster img { width: 100%; display: block; border-radius: 8px; }
+  .modal-info { flex: 1; }
+  .modal-rating {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 20px; font-weight: 700; color: var(--gold); margin-bottom: 12px;
+  }
+  .modal-rating .rating-label { font-size: 13px; color: var(--text-dim); font-weight: 400; }
+  .modal-tmdb-genres { margin-bottom: 12px; }
+  .tmdb-link {
+    font-size: 12px; color: var(--accent); text-decoration: none;
+  }
+  .tmdb-link:hover { text-decoration: underline; }
+
+  /* Watchlist / Merkliste */
+  .watchlist-toggle {
+    padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--orange); background: transparent;
+    color: var(--orange); transition: all 0.2s;
+  }
+  .watchlist-toggle:hover, .watchlist-toggle.active {
+    background: var(--orange); color: #1a1d27;
+  }
+  .watchlist-toggle .wl-count {
+    background: var(--orange); color: #1a1d27; border-radius: 10px;
+    padding: 1px 7px; font-size: 11px; margin-left: 4px;
+  }
+  .watchlist-toggle.active .wl-count {
+    background: #1a1d27; color: var(--orange);
+  }
+  .bookmark-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer; font-size: 16px; padding: 4px 8px; transition: all 0.2s;
+    color: var(--text-dim); position: relative;
+  }
+  .bookmark-btn:hover { border-color: var(--orange); color: var(--orange); }
+  .bookmark-btn.bookmarked { color: var(--orange); border-color: var(--orange); background: rgba(251,191,36,0.1); }
+
+  /* Bookmark dropdown */
+  .bm-dropdown {
+    position: absolute; top: 100%; right: 0; z-index: 50;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px; min-width: 180px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    display: none;
+  }
+  .bm-dropdown.open { display: block; }
+  .bm-dropdown-title { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; }
+  .bm-person {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+    border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--text);
+    transition: background 0.15s;
+  }
+  .bm-person:hover { background: var(--surface2); }
+  .bm-person .bm-check { width: 16px; color: var(--green); }
+  .bm-add-row { display: flex; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+  .bm-add-input {
+    flex: 1; padding: 4px 8px; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-size: 12px; outline: none;
+  }
+  .bm-add-btn {
+    padding: 4px 10px; background: var(--accent); color: white; border: none;
+    border-radius: 4px; font-size: 12px; cursor: pointer;
+  }
+
+  /* Watchlist panel */
+  .watchlist-panel {
+    display: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin: 0 30px;
+    animation: slideDown 0.3s ease;
+  }
+  .watchlist-panel.active { display: block; }
+  .watchlist-panel h3 { font-size: 16px; margin-bottom: 12px; }
+  .wl-filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .wl-person-chip {
+    padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text-dim); transition: all 0.2s;
+  }
+  .wl-person-chip:hover, .wl-person-chip.active {
+    background: var(--orange); color: #1a1d27; border-color: var(--orange);
+  }
+  .wl-items { display: flex; flex-direction: column; gap: 8px; }
+  .wl-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: var(--surface2); border-radius: 8px; border: 1px solid var(--border);
+  }
+  .wl-item-poster { width: 45px; height: 65px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .wl-item-info { flex: 1; min-width: 0; }
+  .wl-item-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wl-item-sub { font-size: 12px; color: var(--text-dim); }
+  .wl-item-persons { display: flex; gap: 4px; flex-wrap: wrap; }
+  .wl-item-person { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(251,191,36,0.15); color: var(--orange); }
+  .wl-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .wl-item-actions a, .wl-item-actions button {
+    padding: 5px 10px; font-size: 12px; border-radius: 4px; text-decoration: none;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .wl-item-actions a:hover, .wl-item-actions button:hover { border-color: var(--accent); }
+  .wl-item-actions .wl-remove { color: var(--red); }
+  .wl-item-actions .wl-remove:hover { border-color: var(--red); }
+
+  /* Sort by rating highlight */
+  .sort-rating-active { border-color: var(--gold) !important; }
+
+  /* Responsive-Block bewusst ganz am Ende: bei gleicher Spezifität gewinnt
+     im Cascade die spätere Regel — so überschreiben die Mobile-Regeln
+     zuverlässig alle Basis-Styles (Modal, Watchlist, Dropdown). */
+  /* Responsive (iPhone SE 375px / iPhone 14-16 390px) */
+  @media (max-width: 768px) {
+    .header {
+      /* Nicht sticky auf Mobile: der gestapelte Filterbereich würde sonst
+         den halben Bildschirm dauerhaft verdecken (iOS-Safari-Quirks mit
+         sticky + overflow entfallen damit ebenfalls) */
+      position: static;
+      padding: 12px 16px 10px;
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+    .header-top { flex-direction: column; gap: 10px; align-items: flex-start; }
+    .header-right { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .stats { flex-wrap: wrap; gap: 8px 14px; }
+    .watchlist-toggle, .profile-toggle { min-height: 44px; }
+    .search-bar { flex-wrap: wrap; }
+    .search-input { flex: 1 1 100%; font-size: 16px; min-height: 44px; } /* 16px verhindert iOS-Auto-Zoom */
+    .search-bar .btn { flex: 1; min-height: 44px; }
+    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .filter-group { width: 100%; min-width: 0; }
+    .filter-select { width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
+    /* Chips: horizontal scrollen statt umbrechen */
+    .chips {
+      flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px; scrollbar-width: none;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex-shrink: 0; min-height: 44px;
+      display: inline-flex; align-items: center;
+    }
+    .grid {
+      padding: 12px; grid-template-columns: 1fr; gap: 12px;
+      padding-left: max(12px, env(safe-area-inset-left));
+      padding-right: max(12px, env(safe-area-inset-right));
+    }
+    .card-poster { width: 90px; min-height: 130px; }
+    /* Touch-Targets: min. 44px (Apple HIG) */
+    .card-actions .btn, .bookmark-btn {
+      min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .pagination .btn { min-height: 44px; }
+    .taste-panel { margin: 12px 16px; }
+    .taste-textarea { font-size: 16px; }
+    .taste-actions .btn { min-height: 44px; }
+    .watchlist-panel { margin: 12px 16px; max-height: 60dvh; overflow-y: auto; }
+    .wl-person-chip { min-height: 40px; display: inline-flex; align-items: center; }
+    .wl-item-actions a, .wl-item-actions button {
+      min-height: 40px; display: inline-flex; align-items: center;
+    }
+    .bm-add-input { font-size: 16px; min-height: 40px; }
+    .bm-person { min-height: 40px; }
+    /* Modal: Fullscreen statt zentriertes Overlay */
+    .modal-overlay { padding: 0; align-items: stretch; }
+    .modal {
+      max-width: none; width: 100%; height: 100dvh; max-height: 100dvh;
+      border-radius: 0; border: none;
+      padding: 16px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+    .modal-poster { width: 110px; }
+    .modal-close { font-size: 30px; min-width: 44px; min-height: 44px; }
+    .modal .actions .btn { min-height: 44px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="logo">
+      <span class="logo-icon">📺</span>
+      <div>Meta<span>Mediathek</span></div>
+    </div>
+    <div class="header-right">
+      <div class="stats">
+        <div><strong id="resultCountTotal">0</strong> Ergebnisse gesamt</div>
+        <div id="filteredInfo"></div>
+        <div><strong id="senderCount">0</strong> Sender</div>
+        <div id="tmdbStatus" style="color:var(--green)"></div>
+      </div>
+      <button class="watchlist-toggle" id="watchlistToggle" onclick="toggleWatchlistPanel()">
+        📌 Merkliste <span class="wl-count" id="wlCount">0</span>
+      </button>
+      <button class="profile-toggle" id="profileToggle" onclick="toggleTastePanel()">
+        🎯 Geschmacksprofil
+      </button>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" class="search-input" id="searchInput"
+           placeholder="Suche nach Titel, Thema, Schauspieler oder Regisseur…" autocomplete="off">
+    <button class="btn btn-primary" onclick="handleSearch()">Suchen</button>
+    <button class="btn btn-secondary" onclick="resetAll()">Zurücksetzen</button>
+  </div>
+  <div id="personInfo" style="display:none;margin-bottom:12px;padding:10px 16px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border);">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img id="personPhoto" style="width:50px;height:50px;border-radius:50%;object-fit:cover;" src="" alt="">
+      <div>
+        <div id="personName" style="font-weight:600;font-size:15px;"></div>
+        <div id="personKnown" style="font-size:12px;color:var(--text-dim);"></div>
+      </div>
+      <button class="btn btn-secondary btn-sm" style="margin-left:auto;" onclick="clearPersonInfo()">✕</button>
+    </div>
+  </div>
+
+  <div class="filters">
+    <div class="filter-group">
+      <span class="filter-label">Sender</span>
+      <select class="filter-select" id="filterChannel" onchange="doSearch()">
+        <option value="">Alle Sender</option>
+        <option value="ARD">ARD</option>
+        <option value="ZDF">ZDF</option>
+        <option value="ARTE.DE">ARTE</option>
+        <option value="3Sat">3sat</option>
+        <option value="SWR">SWR</option>
+        <option value="NDR">NDR</option>
+        <option value="WDR">WDR</option>
+        <option value="BR">BR</option>
+        <option value="HR">HR</option>
+        <option value="MDR">MDR</option>
+        <option value="RBB">RBB</option>
+        <option value="SR">SR</option>
+        <option value="PHOENIX">Phoenix</option>
+        <option value="KiKA">KiKA</option>
+        <option value="DW">DW</option>
+        <option value="Radio Bremen TV">Radio Bremen</option>
+        <option value="ORF">ORF</option>
+        <option value="SRF">SRF</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Mindestdauer</span>
+      <select class="filter-select" id="filterDurationMin" onchange="doSearch()">
+        <option value="0" selected>Beliebig</option>
+        <option value="300">Ab 5 Min.</option>
+        <option value="900">Ab 15 Min.</option>
+        <option value="1800">Ab 30 Min.</option>
+        <option value="2700">Ab 45 Min.</option>
+        <option value="3600">Ab 60 Min. (Spielfilm)</option>
+        <option value="5400">Ab 90 Min.</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Max. Dauer</span>
+      <select class="filter-select" id="filterDurationMax" onchange="doSearch()">
+        <option value="0">Beliebig</option>
+        <option value="1800">Bis 30 Min.</option>
+        <option value="3600">Bis 60 Min.</option>
+        <option value="5400">Bis 90 Min.</option>
+        <option value="7200">Bis 120 Min.</option>
+        <option value="10800">Bis 180 Min.</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Sortierung</span>
+      <select class="filter-select" id="filterSort" onchange="doSearch()">
+        <option value="timestamp_desc">Neueste zuerst</option>
+        <option value="timestamp_asc">Älteste zuerst</option>
+        <option value="duration_desc">Längste zuerst</option>
+        <option value="duration_asc">Kürzeste zuerst</option>
+        <option value="rating_desc">Beste Bewertung ⭐</option>
+        <option value="taste_desc">Bester Geschmacks-Match 🎯</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Tonfassung</span>
+      <select class="filter-select" id="filterAudio" onchange="applySortAndFilter()">
+        <option value="standard" selected>Standard (ohne AD/DGS/OV)</option>
+        <option value="all">Alle Fassungen</option>
+        <option value="ad">Nur Audiodeskription</option>
+        <option value="dgs">Nur Gebärdensprache</option>
+        <option value="ov">Nur Originalton</option>
+        <option value="omu">Nur OmU</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Min. Rating</span>
+      <select class="filter-select" id="filterRating" onchange="applySortAndFilter()">
+        <option value="0">Alle</option>
+        <option value="5">Ab 5.0 ⭐</option>
+        <option value="6">Ab 6.0 ⭐</option>
+        <option value="7">Ab 7.0 ⭐</option>
+        <option value="8">Ab 8.0 ⭐</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Aktualität</span>
+      <select class="filter-select" id="filterAge" onchange="applySortAndFilter()">
+        <option value="7">Letzte 7 Tage</option>
+        <option value="30" selected>Letzte 30 Tage</option>
+        <option value="90">Letzte 3 Monate</option>
+        <option value="365">Letztes Jahr</option>
+        <option value="0">Beliebig</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Ergebnisse</span>
+      <select class="filter-select" id="filterSize" onchange="doSearch()">
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="200" selected>200</option>
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="chips" id="quickChips">
+    <span class="chip" onclick="quickSearch('Spielfilm')">Spielfilme</span>
+    <span class="chip" onclick="quickSearch('Dokumentarfilm')">Dokumentarfilme</span>
+    <span class="chip" onclick="quickSearch('Krimi')">Krimis</span>
+    <span class="chip" onclick="quickSearch('Tatort')">Tatort</span>
+    <span class="chip" onclick="quickSearch('Polizeiruf')">Polizeiruf 110</span>
+    <span class="chip" onclick="quickSearch('Thriller')">Thriller</span>
+    <span class="chip" onclick="quickSearch('Drama')">Drama</span>
+    <span class="chip" onclick="quickSearch('Komödie')">Komödien</span>
+    <span class="chip" onclick="quickSearch('Dokumentation')">Dokus</span>
+    <span class="chip" onclick="quickSearch('Natur')">Natur</span>
+    <span class="chip" onclick="quickSearch('Geschichte')">Geschichte</span>
+    <span class="chip" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
+    <span class="chip" onclick="quickSearch('Liebe')">Liebesfilme</span>
+    <span class="chip" onclick="quickSearch('Kinderfilm')">Kinderfilme</span>
+  </div>
+</div>
+
+<!-- Taste Profile Panel -->
+<div class="taste-panel" id="tastePanel">
+  <h3>🎯 Dein Geschmacksprofil</h3>
+  <p>Beschreibe, was du gerne schaust – die App bewertet dann jeden Film danach, wie gut er zu dir passt.</p>
+  <textarea class="taste-textarea" id="tasteProfile"
+    placeholder="z.B.: Ich mag skandinavische Krimis und düstere Thriller mit komplexen Charakteren. Gerne Gesellschaftskritik, politische Intrigen oder True Crime. Keine Romantik-Komödien oder Heimatfilme. Dokumentationen über Natur und Wissenschaft finde ich auch spannend."></textarea>
+  <div class="taste-examples">
+    <span class="taste-example" onclick="setTasteExample('krimi')">Krimi-Fan</span>
+    <span class="taste-example" onclick="setTasteExample('doku')">Doku-Liebhaber</span>
+    <span class="taste-example" onclick="setTasteExample('arthouse')">Arthouse</span>
+    <span class="taste-example" onclick="setTasteExample('family')">Familienkino</span>
+    <span class="taste-example" onclick="setTasteExample('action')">Action & Thriller</span>
+  </div>
+  <div class="taste-actions">
+    <button class="btn btn-gold btn-sm" onclick="applyTasteProfile()">🎯 Profil anwenden</button>
+    <button class="btn btn-secondary btn-sm" onclick="clearTasteProfile()">Löschen</button>
+    <span class="taste-status" id="tasteStatus"></span>
+  </div>
+</div>
+
+<!-- Watchlist Panel -->
+<div class="watchlist-panel" id="watchlistPanel">
+  <h3>📌 Deine Merkliste</h3>
+  <div class="wl-filter-row" id="wlFilterRow">
+    <span class="wl-person-chip active" data-person="">Alle</span>
+  </div>
+  <div class="wl-items" id="wlItems">
+    <div style="color:var(--text-dim);text-align:center;padding:20px;">Noch keine Filme gemerkt. Klicke auf 📌 bei einem Film, um ihn hier zu speichern.</div>
+  </div>
+</div>
+
+<div id="content">
+  <div class="loading" id="loadingState" style="display:none;">
+    <div class="spinner"></div>
+    <div>Durchsuche alle Mediatheken…</div>
+    <div class="loading-sub" id="loadingSub"></div>
+  </div>
+  <div class="grid" id="resultsGrid"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <div class="empty-icon">🎬</div>
+    <div>Keine Ergebnisse gefunden. Versuche eine andere Suche oder passe die Filter an.</div>
+  </div>
+  <div class="pagination" id="pagination" style="display:none;">
+    <button class="btn btn-secondary" id="btnPrev" onclick="prevPage()">← Zurück</button>
+    <span class="page-info" id="pageInfo"></span>
+    <button class="btn btn-secondary" id="btnNext" onclick="nextPage()">Weiter →</button>
+  </div>
+</div>
+
+<!-- Global Bookmark Dropdown -->
+<div class="bm-dropdown" id="globalBmDrop" style="position:fixed;z-index:300;">
+  <div class="bm-dropdown-title">Merken für:</div>
+  <div id="bmPersonsList"></div>
+  <div class="bm-add-row">
+    <input class="bm-add-input" placeholder="Neue Person…" id="bmAddInputGlobal" onkeydown="if(event.key==='Enter')addPersonGlobal()">
+    <button class="bm-add-btn" onclick="addPersonGlobal()">+</button>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal" role="dialog" aria-modal="true" onclick="event.stopPropagation()">
+    <button class="modal-close" aria-label="Schließen" onclick="document.getElementById('modal').classList.remove('active')">&times;</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+// ─── Config ───
+const MEDIATHEK_API = 'https://mediathekviewweb.de/api/query';
+// SECURITY-TODO: Client-seitiger TMDB-Key ist für den Prototyp (<50 Nutzer,
+// kostenloser Tier) akzeptabel. Bei größerem Rollout: Key hinter einen kleinen
+// Server-Proxy legen (z.B. Cloudflare Worker) und hier nur den Proxy aufrufen.
+const TMDB_API_KEY = '2e8e36990eb20bc733fd845b092af8a8';
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMG = 'https://image.tmdb.org/t/p';
+const CORS_PROXIES = ['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+
+// ─── Konstanten (vorher Magic Numbers) ───
+const TMDB_BATCH_SIZE = 5;            // parallele TMDB-Lookups pro Batch (~2-6 Requests pro Item → bleibt unter TMDB-Rate-Limit)
+const RENDER_THROTTLE_MS = 800;       // max. Re-Render-Frequenz während TMDB-Enrichment
+const FETCH_TIMEOUT_MS = 12000;       // Timeout pro Netzwerk-Request (sonst blockiert ein Hänger die Proxy-Fallback-Kette)
+const PERSON_TITLE_LIMIT = 50;        // max. TMDB-Credits, die in Mediatheken gesucht werden
+const PERSON_BATCH_SIZE = 4;          // parallele Mediathek-Queries bei Personensuche
+const EXPIRY_WARN_DAYS = 60;          // ab hier "Möglicherweise offline"
+const EXPIRY_OFFLINE_DAYS = 365;      // ab hier "Wahrscheinlich offline"
+const QUERY_CACHE_MAX = 20;           // gecachte Mediathek-Antworten (LRU)
+const QUERY_CACHE_TTL_MS = 10 * 60 * 1000;
+
+// ─── State ───
+// Bewusst einfache Modul-Globals (Single-File-Prototyp). Bei Modularisierung
+// (Svelte/React) wären diese der erste Kandidat für einen Store.
+let activeCorsProxy = '';
+let currentOffset = 0;
+let totalResults = 0;
+let lastResults = [];       // raw mediathek results
+let enrichedResults = [];   // with TMDB data + taste scores (master list)
+let displayedResults = [];  // currently displayed (after filter/sort)
+let tmdbCache = {};         // "topic|||title" -> TMDB-Ergebnis (oder null = kein Match)
+let tasteKeywords = null;   // parsed taste profile
+let searchSeq = 0;          // Generation-Token: entwertet veraltete Such-Antworten (Race-Schutz)
+
+// ─── Mini-Event-System ───
+// Zentrale Andockstelle für spätere Features (Gesehen-Markierung, Likes, Statistiken).
+// Aktuell emittiert: 'search:completed', 'results:rendered', 'watchlist:changed'.
+const AppEvents = {
+  _listeners: {},
+  on(event, fn) { (this._listeners[event] = this._listeners[event] || []).push(fn); },
+  emit(event, detail) {
+    (this._listeners[event] || []).forEach(fn => {
+      try { fn(detail); } catch (e) { console.error(`AppEvents(${event}):`, e); }
+    });
+  }
+};
+
+// ─── Helpers ───
+
+// Normalize ß↔ss for case-insensitive German text comparison
+function normDE(text) {
+  return (text || '').toLowerCase().replace(/ß/g, 'ss');
+}
+
+// Einheitliche Film-ID (auch Watchlist-Key): stabil pro Sendung.
+// Basis für spätere Features wie Gesehen/Like-Markierung.
+function getItemKey(item) {
+  return `${item.channel}|||${item.title}|||${item.timestamp}`;
+}
+
+// Fetch mit Timeout, gibt geparstes JSON oder null zurück (wirft nie)
+async function fetchJsonSafe(url, ms = FETCH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── TMDB Integration ───
+
+// Generate multiple search title candidates from a Mediathek title + topic
+function generateSearchTitles(title, topic) {
+  const candidates = [];
+  let t = title.trim();
+
+  // 1. Handle "Topic: Actual Title" pattern (e.g. "Tatort: Der letzte Schrei")
+  if (t.includes(':')) {
+    const afterColon = t.split(':').slice(1).join(':').trim();
+    if (afterColon.length > 2) candidates.push(afterColon);
+  }
+
+  // 2. Clean the full title step by step
+  let cleaned = t
+    .replace(/\s*\(?\b(S\d{1,2})?E?\d{1,3}\)?\s*$/i, '')    // remove S01E03 / (3) style episode numbers
+    .replace(/\s*[-–|]\s*(Spielfilm|Film|Krimi|Drama|Thriller|Komödie|Fernsehfilm|TV-Film).*$/i, '')
+    .replace(/\s*[-–]\s*Teil\s*\d.*$/i, '')                    // "- Teil 2"
+    .replace(/\s*\|\s*.+$/, '')                                 // pipe-separated suffixes
+    .replace(/\s*\(\d{4}\)\s*$/, '')                           // year in parentheses
+    .replace(/\s*[-–]\s*Der\s+(Film|Fernsehfilm)\s*$/i, '')    // "- Der Film"
+    .replace(/\s*\((mit\s+)?Untertitel\)\s*$/i, '')            // (mit Untertitel) / (Untertitel)
+    .replace(/\s*\((mit\s+)?Audiodeskription\)\s*$/i, '')      // (mit Audiodeskription)
+    .replace(/\s*\((OmU|OV|OmeU|Originalversion|Originalfassung|dt\.\s*Fassung|deutsche?\s+Fassung|Langfassung|Kurzfassung|Director'?s\s*Cut|Extended|ungekürzt|gekürzt|barrierefrei|Gebärdensprache|DGS|AD)\)\s*$/i, '')
+    .replace(/\s*[-–]\s*(OmU|OV|OmeU|Originalversion|Hörfilmfassung|Audiodeskription|AD|DGS|Gebärdensprache)\s*$/i, '')
+    .replace(/\s*\(Staffel\s*\d+\)\s*$/i, '')                 // (Staffel 3)
+    .replace(/\s*\(Folge\s*\d+\)\s*$/i, '')                   // (Folge 12)
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cleaned.length > 2 && !candidates.includes(cleaned)) candidates.push(cleaned);
+
+  // 3. Handle "Prefix: Title" patterns for common show names
+  const prefixes = /^(Film im Ersten|Fernsehfilm der Woche|FilmMittwoch im Ersten|Filme im Ersten|Freitagsfilm|FilmDebüt im Ersten|SommerKino im Ersten|Der Fernsehfilm|Montagskino|TELEFILM|Film)\s*[:\-–]\s*/i;
+  if (prefixes.test(t)) {
+    const stripped = t.replace(prefixes, '').trim();
+    if (stripped.length > 2 && !candidates.includes(stripped)) candidates.push(stripped);
+  }
+
+  // 4. If the topic looks like a series name (Tatort, Polizeiruf 110, etc.), use topic as series search
+  const seriesTopics = ['tatort', 'polizeiruf 110', 'donna leon', 'wilsberg', 'der alte', 'soko', 'ein starkes team', 'helen dorn', 'nord bei nordwest'];
+  const topicLower = (topic || '').toLowerCase();
+  if (seriesTopics.some(s => topicLower.includes(s))) {
+    // For known series, search with full "Topic Title" to get the specific episode
+    const combo = `${topic} ${t.replace(/^.*?:\s*/, '')}`;
+    if (!candidates.includes(combo)) candidates.push(combo);
+  }
+
+  // 5. If colon-split yields a known series, also try just the title part
+  if (t.includes(':')) {
+    const parts = t.split(':');
+    const beforeColon = parts[0].trim();
+    if (beforeColon.length > 2 && !candidates.includes(beforeColon)) candidates.push(beforeColon);
+  }
+
+  // 6. Use original title as last resort
+  if (t.length > 2 && !candidates.includes(t)) candidates.push(t);
+
+  return candidates;
+}
+
+// Search TMDB with fallback: try movie, then TV
+async function tmdbSearchSingle(query, type = 'movie') {
+  const endpoint = type === 'tv' ? 'search/tv' : 'search/movie';
+  const url = `${TMDB_BASE}/${endpoint}?api_key=${TMDB_API_KEY}&language=de-DE&region=DE&query=${encodeURIComponent(query)}&page=1`;
+  const data = await fetchJsonSafe(url);
+  return (data && data.results) || [];
+}
+
+function buildTmdbResult(best, type = 'movie') {
+  const isTV = type === 'tv';
+  return {
+    tmdb_id: best.id,
+    tmdb_type: type,
+    rating: best.vote_average || 0,
+    vote_count: best.vote_count || 0,
+    overview: best.overview || '',
+    poster: best.poster_path ? `${TMDB_IMG}/w342${best.poster_path}` : null,
+    poster_sm: best.poster_path ? `${TMDB_IMG}/w185${best.poster_path}` : null,
+    backdrop: best.backdrop_path ? `${TMDB_IMG}/w780${best.backdrop_path}` : null,
+    release_date: (isTV ? best.first_air_date : best.release_date) || '',
+    genre_ids: best.genre_ids || [],
+    original_title: (isTV ? best.original_name : best.original_title) || '',
+    title: (isTV ? best.name : best.title) || '',
+    popularity: best.popularity || 0
+  };
+}
+
+// Compute title similarity (0.0 to 1.0)
+function titleSimilarity(query, result) {
+  const q = normDE(query.trim());
+  const rTitle = normDE((result.title || result.name || '').trim());
+  const rOrig = normDE((result.original_title || result.original_name || '').trim());
+
+  // Check both the localized and original title
+  const scores = [];
+  for (const t of [rTitle, rOrig]) {
+    if (!t) continue;
+    if (t === q) { scores.push(1.0); continue; }
+    // One contains the other exactly
+    if (t.includes(q) || q.includes(t)) {
+      // Penalize if TMDB title is much longer (e.g. "Joy – Alles außer gewöhnlich" vs search "Alles außer gewöhnlich")
+      const ratio = Math.min(q.length, t.length) / Math.max(q.length, t.length);
+      scores.push(0.5 + ratio * 0.4);
+      continue;
+    }
+    // Word overlap
+    const qWords = new Set(q.split(/\s+/).filter(w => w.length > 2));
+    const tWords = new Set(t.split(/\s+/).filter(w => w.length > 2));
+    if (qWords.size === 0) continue;
+    let overlap = 0;
+    for (const w of qWords) { if (tWords.has(w)) overlap++; }
+    scores.push(overlap / Math.max(qWords.size, tWords.size));
+  }
+  return scores.length > 0 ? Math.max(...scores) : 0;
+}
+
+// Pick the best TMDB result: balance title similarity with popularity
+function pickBest(results, searchQuery) {
+  if (!results || results.length === 0) return null;
+  const withVotes = results.filter(r => r.vote_count > 0);
+  const pool = withVotes.length > 0 ? withVotes : results;
+
+  if (!searchQuery) {
+    // Fallback to old behavior if no query given
+    pool.sort((a, b) => (b.vote_count * b.popularity) - (a.vote_count * a.popularity));
+    return pool[0];
+  }
+
+  // Score each result: title similarity dominates, popularity is a tiebreaker
+  const scored = pool.map(r => {
+    const sim = titleSimilarity(searchQuery, r);
+    // Normalize popularity to 0-1 range (cap at 100)
+    const popNorm = Math.min((r.popularity || 0) / 100, 1);
+    // Title similarity is 80% of the score, popularity 20%
+    const score = sim * 0.8 + popNorm * 0.2;
+    return { result: r, score, sim };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].result;
+}
+
+// Check if a topic is a generic category (not a specific show/series name)
+function isGenericTopic(topic) {
+  if (!topic) return true;
+  const cleaned = topic.replace(/[-–:]/g, ' ').trim();
+  // Generic category names (not specific series/show names)
+  const generic = /^(spielfilm|film|kino|fernsehfilm|krimi|drama|thriller|komödie|dokumentation|doku|reportage|serie|serien|magazin|nachrichten|talk|show|unterhaltung|sport|wissen|kultur|ratgeber|reise|gesellschaft|politik|wirtschaft|comedy|kabarett|musik|konzert|oper|theater|kinderprogramm|kinderfilm|spielfilm.highlight|kino\s*[-–]?\s*filme?|filme?\s*im\s*ersten|der\s*fernsehfilm|fernsehfilm\s*der\s*woche|filmmi?ttwoch|freitagsfilm|montagskino|sommerKino|telefilm|dokus?\s*[&+]\s*reportagen|history|wissensmagazin)/i;
+  if (generic.test(cleaned)) return true;
+  // Known news/magazine/talk shows — they report ON films, their episode titles are not series episodes
+  const newsShows = /^(heute\s*journal|heute\s*show|heute|tagesschau|tagesthemen|tagesschau24|zdf\s*heute|morgenmagazin|moma|mittagsmagazin|nachtmagazin|bericht\s*aus\s*berlin|berlin\s*direkt|frontal|monitor|panorama|fakt|report|plusminus|markt|mex|exact|brisant|leute|ndr\s*talk|3\s*nach\s*9|markus\s*lanz|maischberger|hart\s*aber\s*fair|anne\s*will|sandra\s*maischberger|caren\s*miosga|stern\s*tv|spiegel\s*tv|extra\s*3|die\s*anstalt|neo\s*magazin|zdf\s*magazin|aspekte|kulturzeit|titel\s*thesen\s*temperamente|ttt|druckfrisch|das\s*literarische\s*quartett|kunscht|capriccio|kinokino|close\s*up|filmtipp|filmgorillas|leschs?\s*kosmos|quarks|galileo|wiso|volle\s*kanne|mdr\s*aktuell|ndr\s*info|rbb24|sr\s*aktuell|event\s*mix\s*der\s*woche)/i;
+  if (newsShows.test(cleaned)) return true;
+  return false;
+}
+
+// Wrapper: dedupliziert identische, gleichzeitig laufende TMDB-Suchen.
+// Ohne dies lösen z.B. zwei Tatort-Folgen im selben Batch doppelte Requests aus.
+const tmdbInflight = new Map();
+function tmdbSearch(title, topic) {
+  const cacheKey = `${topic}|||${title}`;
+  if (tmdbCache[cacheKey] !== undefined) return Promise.resolve(tmdbCache[cacheKey]);
+  if (tmdbInflight.has(cacheKey)) return tmdbInflight.get(cacheKey);
+  const p = tmdbSearchUncached(title, topic).finally(() => tmdbInflight.delete(cacheKey));
+  tmdbInflight.set(cacheKey, p);
+  return p;
+}
+
+async function tmdbSearchUncached(title, topic) {
+  const cacheKey = `${topic}|||${title}`;
+  if (tmdbCache[cacheKey] !== undefined) return tmdbCache[cacheKey];
+
+  // STEP 1: If topic looks like a specific show name (not generic), try it as a TV series FIRST
+  // This prevents episode titles from matching unrelated movies
+  const topicIsSpecific = topic && !isGenericTopic(topic);
+  if (topicIsSpecific) {
+    const topicClean = topic.replace(/\s*[-–]\s*$/, '').trim();
+    const tvResults = await tmdbSearchSingle(topicClean, 'tv');
+    const bestTV = pickBest(tvResults, topicClean);
+    if (bestTV && bestTV.vote_count >= 3 && titleSimilarity(topicClean, bestTV) >= 0.4) {
+      const result = buildTmdbResult(bestTV, 'tv');
+      tmdbCache[cacheKey] = result;
+      return result;
+    }
+    // Also try a shortened topic (before " - " suffix, e.g. "Lust aufs Land - Bayerische Hofgeschichten" → "Lust aufs Land")
+    if (topicClean.includes(' - ') || topicClean.includes(' – ')) {
+      const shortTopic = topicClean.split(/\s*[-–]\s*/)[0].trim();
+      if (shortTopic.length > 3) {
+        const tvShort = await tmdbSearchSingle(shortTopic, 'tv');
+        const bestShort = pickBest(tvShort, shortTopic);
+        if (bestShort && bestShort.vote_count >= 3 && titleSimilarity(shortTopic, bestShort) >= 0.4) {
+          const result = buildTmdbResult(bestShort, 'tv');
+          tmdbCache[cacheKey] = result;
+          return result;
+        }
+      }
+    }
+    // Topic is specific but TMDB doesn't know this series — return null
+    // rather than searching by episode title and getting a wrong movie match
+    // (e.g. "Lust aufs Land" episode "Alles außer gewöhnlich!" ≠ the 2019 French film)
+    tmdbCache[cacheKey] = null;
+    return null;
+  }
+
+  // STEP 2: Try title-based search candidates (movie + TV) — only for generic/film topics
+  const candidates = generateSearchTitles(title, topic);
+
+  for (const candidate of candidates) {
+    // Try movie search
+    const movieResults = await tmdbSearchSingle(candidate, 'movie');
+    const bestMovie = pickBest(movieResults, candidate);
+    if (bestMovie && bestMovie.vote_count >= 5) {
+      const sim = titleSimilarity(candidate, bestMovie);
+      if (sim >= 0.3) {
+        const result = buildTmdbResult(bestMovie, 'movie');
+        tmdbCache[cacheKey] = result;
+        return result;
+      }
+    }
+
+    // Try TV search
+    const tvResults = await tmdbSearchSingle(candidate, 'tv');
+    const bestTV = pickBest(tvResults, candidate);
+    if (bestTV && bestTV.vote_count >= 5) {
+      const sim = titleSimilarity(candidate, bestTV);
+      if (sim >= 0.3) {
+        const result = buildTmdbResult(bestTV, 'tv');
+        tmdbCache[cacheKey] = result;
+        return result;
+      }
+    }
+
+    // Accept lower quality matches if title similarity is decent
+    if (bestMovie && bestMovie.vote_count > 0 && titleSimilarity(candidate, bestMovie) >= 0.4) {
+      const result = buildTmdbResult(bestMovie, 'movie');
+      tmdbCache[cacheKey] = result;
+      return result;
+    }
+    if (bestTV && bestTV.vote_count > 0 && titleSimilarity(candidate, bestTV) >= 0.4) {
+      const result = buildTmdbResult(bestTV, 'tv');
+      tmdbCache[cacheKey] = result;
+      return result;
+    }
+  }
+
+  tmdbCache[cacheKey] = null;
+  return null;
+}
+
+// TMDB Genre mapping
+const TMDB_GENRES = {
+  28:'Action', 12:'Abenteuer', 16:'Animation', 35:'Komödie', 80:'Krimi',
+  99:'Dokumentation', 18:'Drama', 10751:'Familie', 14:'Fantasy', 36:'Geschichte',
+  27:'Horror', 10402:'Musik', 9648:'Mystery', 10749:'Romantik', 878:'Sci-Fi',
+  10770:'TV-Film', 53:'Thriller', 10752:'Krieg', 37:'Western'
+};
+
+function tmdbGenreNames(ids) {
+  return (ids || []).map(id => TMDB_GENRES[id]).filter(Boolean);
+}
+
+// ─── Taste Profile ───
+const TASTE_EXAMPLES = {
+  krimi: 'Ich liebe spannende Krimis und Thriller – besonders Tatort, Polizeiruf, skandinavische Krimis. Komplexe Ermittlungen, düstere Atmosphäre, psychologische Spannung. Gerne auch True Crime Dokus.',
+  doku: 'Ich schaue am liebsten Dokumentationen und Reportagen über Natur, Wissenschaft, Geschichte und Gesellschaft. Investigativer Journalismus und Natur-Dokus finde ich besonders fesselnd.',
+  arthouse: 'Ich mag anspruchsvolles Kino – europäische Autorenfilme, gesellschaftskritische Dramen, ARTE-Produktionen. Gerne experimentell, philosophisch, visuell stark. Keine Mainstream-Unterhaltung.',
+  family: 'Wir schauen als Familie – Kinderfilme, Abenteuerfilme, Komödien, Märchen und Animationsfilme. Alles was unterhaltsam und familienfreundlich ist. Keine Gewalt oder Horror.',
+  action: 'Action, Thriller, Spannung! Schnelle Filme mit viel Tempo, Verfolgungsjagden, Agenten-Thriller, Heist-Movies. Gerne auch gute Kriegsfilme oder dystopische Sci-Fi.'
+};
+
+function setTasteExample(key) {
+  document.getElementById('tasteProfile').value = TASTE_EXAMPLES[key] || '';
+}
+
+function toggleTastePanel() {
+  const panel = document.getElementById('tastePanel');
+  const toggle = document.getElementById('profileToggle');
+  // Close watchlist panel if open
+  document.getElementById('watchlistPanel').classList.remove('active');
+  document.getElementById('watchlistToggle').classList.remove('active');
+  panel.classList.toggle('active');
+  toggle.classList.toggle('active');
+}
+
+function parseTasteProfile(text) {
+  if (!text || !text.trim()) return null;
+  const lower = normDE(text);
+
+  // Extract positive and negative signals
+  const negativePatterns = /(?:kein[e]?|nicht|ohne|hasse|mag keine?|nichts mit)\s+(\w+(?:\s+\w+)?)/gi;
+  const negatives = [];
+  let m;
+  while ((m = negativePatterns.exec(lower)) !== null) {
+    negatives.push(m[1].trim());
+  }
+
+  // Genre signal groups (broad categories)
+  const genreSignals = [
+    { terms: ['krimi', 'mord', 'ermittl', 'kommissar', 'tatort', 'polizeiruf', 'detektiv', 'verbrechen'], genre: 'krimi', weight: 2 },
+    { terms: ['thriller', 'spannung', 'spannend', 'psycho', 'nervenaufreibend'], genre: 'thriller', weight: 2 },
+    { terms: ['drama', 'dramatisch', 'tragödie', 'schicksal', 'gesellschaftskritik', 'sozialdrama'], genre: 'drama', weight: 2 },
+    { terms: ['komödie', 'comedy', 'lustig', 'humor', 'witzig', 'lachen', 'spaß'], genre: 'komödie', weight: 2 },
+    { terms: ['doku', 'dokumentation', 'dokumentarfilm', 'reportage', 'investigativ'], genre: 'doku', weight: 2 },
+    { terms: ['natur', 'tier', 'wildnis', 'ozean', 'umwelt', 'klima', 'planet'], genre: 'natur', weight: 2 },
+    { terms: ['geschichte', 'historisch', 'zeitgeschichte'], genre: 'geschichte', weight: 2 },
+    { terms: ['science fiction', 'sci-fi', 'zukunft', 'dystop', 'weltraum'], genre: 'scifi', weight: 2 },
+    { terms: ['liebe', 'romantik', 'romanze', 'romantisch', 'liebesfilm'], genre: 'romantik', weight: 2 },
+    { terms: ['abenteuer', 'expedition', 'entdeckung'], genre: 'abenteuer', weight: 2 },
+    { terms: ['horror', 'grusel', 'unheimlich', 'angst'], genre: 'horror', weight: 2 },
+    { terms: ['familie', 'kinder', 'kinderfilm', 'familienfilm', 'märchen'], genre: 'familie', weight: 2 },
+    { terms: ['action', 'verfolgung', 'explosion', 'kampf', 'agent'], genre: 'action', weight: 2 },
+    { terms: ['heimat', 'alpen', 'berg', 'ländlich', 'dorf'], genre: 'heimat', weight: 1 },
+    { terms: ['musik', 'konzert', 'oper', 'musical'], genre: 'musik', weight: 1 },
+    { terms: ['politik', 'politisch', 'intrigen', 'macht', 'korruption'], genre: 'politik', weight: 2 },
+    { terms: ['kunst', 'arthouse', 'autorenfilm', 'experimentell', 'avantgarde'], genre: 'arthouse', weight: 2 },
+    { terms: ['wissenschaft', 'forschung', 'technik', 'technologie'], genre: 'wissenschaft', weight: 2 },
+    { terms: ['true crime', 'wahre begebenheit', 'tatsächlich', 'real'], genre: 'truecrime', weight: 2 },
+    { terms: ['skandinavisch', 'nordic noir', 'nordisch', 'schwedisch', 'dänisch'], genre: 'nordic', weight: 2 },
+    { terms: ['europäisch', 'französisch', 'arte', 'anspruchsvoll'], genre: 'euro', weight: 1 },
+    { terms: ['krieg', 'kriegsfilm', 'soldat', 'militär', 'schlacht'], genre: 'kriegsfilm', weight: 2 },
+    { terms: ['western'], genre: 'western', weight: 1 },
+    { terms: ['animation', 'animationsfilm', 'zeichentrick', 'anime'], genre: 'animation', weight: 2 },
+  ];
+
+  const positives = [];
+  const negativeGenres = [];
+
+  // Collect all genre terms for later exclusion from content keywords
+  const allGenreTerms = new Set();
+  for (const sig of genreSignals) {
+    for (const t of sig.terms) allGenreTerms.add(t);
+  }
+
+  for (const sig of genreSignals) {
+    for (const term of sig.terms) {
+      // Use word-boundary-aware matching: "nachkriegszeit" should NOT match "krieg"
+      // Check that the match isn't just a substring of a longer, different word
+      const idx = lower.indexOf(term);
+      if (idx === -1) continue;
+      // Verify it's a standalone match or a compound starting with this term
+      // e.g. "nachkrieg" should match "nachkrieg" group but "nachkriegszeit" should NOT match "krieg"
+      const charBefore = idx > 0 ? lower[idx - 1] : ' ';
+      const isWordStart = charBefore === ' ' || charBefore === ',' || charBefore === '.' || charBefore === '\n';
+      if (!isWordStart) continue;
+
+      const isNeg = negatives.some(n => n.includes(term) || term.includes(n));
+      if (isNeg) {
+        negativeGenres.push(sig);
+      } else {
+        positives.push(sig);
+      }
+      break;
+    }
+  }
+
+  // Extract content-specific keywords from the profile text
+  // These are the actual topic words the user mentioned (e.g. "nachkriegszeit", "palästina")
+  // Separate into TOPIC keywords (what it's about) and exclude META words (how it's presented)
+  const stopwords = new Set([
+    'ich', 'mag', 'möchte', 'gerne', 'gern', 'über', 'und', 'oder', 'mit', 'von',
+    'das', 'der', 'die', 'den', 'dem', 'des', 'ein', 'eine', 'einen', 'einem',
+    'für', 'zum', 'zur', 'aus', 'bei', 'nach', 'wie', 'aber', 'auch', 'noch',
+    'sehr', 'viel', 'mehr', 'gut', 'gute', 'guten', 'guter', 'gutes',
+    'am', 'an', 'auf', 'in', 'im', 'um', 'zu', 'so', 'als', 'es', 'ist',
+    'sind', 'war', 'hat', 'haben', 'wird', 'mich', 'mir', 'mein', 'meine',
+    'filme', 'film', 'serien', 'serie', 'sendung', 'sendungen', 'beiträge',
+    'schaue', 'sehe', 'suche', 'interesse', 'interessiert', 'besonders',
+    'liebe', 'bevorzuge', 'favoriten', 'empfehlung', 'empfehlungen',
+    'thema', 'themen', 'genre', 'art', 'kategorie', 'typ',
+  ]);
+  // Meta words describe HOW content is presented, not WHAT it's about — exclude from topic matching
+  const metaWords = new Set([
+    'differenziert', 'darstellen', 'dargestellt', 'darstellt', 'darstellung',
+    'zeigen', 'zeigt', 'gezeigt', 'behandeln', 'behandelt', 'beleuchten', 'beleuchtet',
+    'erzählen', 'erzählt', 'schildern', 'schildert', 'beschreiben', 'beschreibt',
+    'aufarbeiten', 'aufgearbeitet', 'thematisieren', 'thematisiert',
+    'kritisch', 'ausführlich', 'detailliert', 'tiefgründig', 'anspruchsvoll',
+    'spannend', 'unterhaltsam', 'berührend', 'bewegend', 'packend',
+    'authentisch', 'realistisch', 'emotional', 'intensiv', 'eindrucksvoll',
+    'handeln', 'handelt', 'drehen', 'dreht', 'gehen', 'geht', 'spielen', 'spielt',
+    'mögen', 'bevorzugen', 'finden', 'finde', 'gefallen', 'gefällt',
+  ]);
+  const contentKeywords = [];
+  // Split by common separators, extract words 4+ chars not in stopwords/genre/meta terms
+  const words = lower.replace(/[,.\-;:!?()]/g, ' ').split(/\s+/);
+  for (const word of words) {
+    if (word.length < 4) continue;
+    if (stopwords.has(word)) continue;
+    if (metaWords.has(word)) continue;
+    if (allGenreTerms.has(word)) continue;
+    if (negatives.some(n => n.includes(word))) continue;
+    contentKeywords.push(word);
+  }
+
+  // Also extract 2-word topic phrases for better precision matching
+  // e.g. "palästina konflikt" → match as a phrase for higher score
+  const contentPhrases = [];
+  for (let i = 0; i < contentKeywords.length - 1; i++) {
+    contentPhrases.push(contentKeywords[i] + ' ' + contentKeywords[i + 1]);
+  }
+
+  return { positives, negativeGenres, contentKeywords, contentPhrases, rawText: lower };
+}
+
+function scoreTaste(item, tmdb, profile) {
+  if (!profile) return 0;
+  const text = normDE(`${item.topic} ${item.title} ${item.description || ''} ${tmdb?.overview || ''}`);
+  const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids).map(g => normDE(g)) : [];
+  let score = 0;
+  const totalTopicKeywords = (profile.contentKeywords || []).length;
+
+  // 1) Phrase matches (HIGHEST weight — e.g. "palästina konflikt" as phrase)
+  if (profile.contentPhrases && profile.contentPhrases.length > 0) {
+    for (const phrase of profile.contentPhrases) {
+      if (text.includes(phrase)) {
+        score += 10;  // very strong: phrase found as-is
+      }
+    }
+  }
+
+  // 2) Individual content keyword matches
+  if (totalTopicKeywords > 0) {
+    let keywordHits = 0;
+    for (const kw of profile.contentKeywords) {
+      if (text.includes(kw)) {
+        keywordHits++;
+        score += 3;
+      }
+    }
+    // If user specified multiple topic keywords, reward items that match most/all of them
+    // and penalize items that only match one generic word
+    if (totalTopicKeywords >= 2) {
+      const matchRatio = keywordHits / totalTopicKeywords;
+      if (matchRatio >= 0.8) {
+        score += 6;  // nearly all keywords match → strong topic fit
+      } else if (matchRatio >= 0.5) {
+        score += 2;  // decent overlap
+      } else if (keywordHits <= 1 && totalTopicKeywords >= 2) {
+        // Only 1 out of 2+ keywords matched — likely a false positive (e.g. just "konflikt")
+        score = Math.max(0, score - 2);
+      }
+    }
+  }
+
+  // 3) Genre signal matches (LOW weight — broad category fit)
+  for (const sig of profile.positives) {
+    for (const term of sig.terms) {
+      if (text.includes(term)) {
+        score += sig.weight;
+        break;
+      }
+    }
+    // Also check TMDB genres
+    for (const tg of tmdbGenres) {
+      if (sig.terms.some(t => tg.includes(t) || t.includes(tg))) {
+        score += sig.weight;
+        break;
+      }
+    }
+  }
+
+  // 4) Negative matches (penalty)
+  for (const sig of profile.negativeGenres) {
+    for (const term of sig.terms) {
+      if (text.includes(term)) {
+        score -= sig.weight * 2;
+        break;
+      }
+    }
+  }
+
+  return score;
+}
+
+function applyTasteProfile() {
+  const text = document.getElementById('tasteProfile').value;
+  tasteKeywords = parseTasteProfile(text);
+  if (tasteKeywords) {
+    const kwCount = tasteKeywords.contentKeywords ? tasteKeywords.contentKeywords.length : 0;
+    document.getElementById('tasteStatus').textContent =
+      `✓ Profil aktiv (${tasteKeywords.positives.length} Genres, ${kwCount} Themen-Keywords, ${tasteKeywords.negativeGenres.length} Ausschlüsse)`;
+    // Save to localStorage
+    try { localStorage.setItem('metaMediathek_taste', text); } catch(e) {}
+
+    // Close the panel
+    document.getElementById('tastePanel').classList.remove('active');
+    document.getElementById('profileToggle').classList.add('active');
+
+    // Auto-switch sort to taste match
+    document.getElementById('filterSort').value = 'taste_desc';
+
+    // Re-score and re-render
+    rescoreAndRender();
+  } else {
+    document.getElementById('tasteStatus').textContent = '⚠ Bitte beschreibe deinen Filmgeschmack.';
+  }
+}
+
+function clearTasteProfile() {
+  document.getElementById('tasteProfile').value = '';
+  tasteKeywords = null;
+  document.getElementById('tasteStatus').textContent = '';
+  document.getElementById('profileToggle').classList.remove('active');
+  try { localStorage.removeItem('metaMediathek_taste'); } catch(e) {}
+  // Reset sort if it was on taste
+  if (document.getElementById('filterSort').value === 'taste_desc') {
+    document.getElementById('filterSort').value = 'timestamp_desc';
+  }
+  rescoreAndRender();
+}
+
+// ─── Channel & Genre helpers ───
+function getChannelClass(ch) {
+  const c = (ch || '').toUpperCase();
+  if (c.includes('ARD') || c === 'DAS ERSTE') return 'ch-ard';
+  if (c.includes('ZDF')) return 'ch-zdf';
+  if (c.includes('ARTE')) return 'ch-arte';
+  if (c.includes('3SAT')) return 'ch-3sat';
+  if (c.includes('PHOENIX')) return 'ch-phoenix';
+  if (c.includes('KIKA')) return 'ch-kika';
+  return 'ch-default';
+}
+
+// Detect audio/accessibility variant from title + topic
+function detectAudioVariant(item) {
+  const text = `${item.title} ${item.topic}`.toLowerCase();
+  if (/audiodeskription|\(ad\)|audio.?deskription|\bAD\b/.test(text)) return 'ad';
+  if (/gebärdensprache|\(dgs\)|deutsche gebärdensprache/.test(text)) return 'dgs';
+  if (/\(omu\)|original mit untertitel|originalfassung mit untertitel/.test(text)) return 'omu';
+  if (/\(ov\)|\(of\)|originalversion|originalton|originalfassung|english version|version originale/.test(text)) return 'ov';
+  if (/hörfassung/.test(text)) return 'ad';
+  if (/leichte sprache/.test(text)) return 'leicht';
+  return 'standard';
+}
+
+function detectGenres(item) {
+  const text = `${item.topic} ${item.title} ${item.description || ''}`.toLowerCase();
+  const genres = [];
+  const checks = [
+    ['Krimi', /krimi|tatort|polizeiruf|mord|ermittl|kommissar|detektiv/],
+    ['Thriller', /thriller|spannung|psycho.?thriller/],
+    ['Drama', /drama|tragödie|schicksal/],
+    ['Komödie', /komödie|comedy|humor|lustig|lach/],
+    ['Dokumentation', /dokumentation|doku|reportage|portrait|porträt/],
+    ['Dokumentarfilm', /dokumentarfilm/],
+    ['Natur', /natur|tier|wildnis|erde|ozean|meer|umwelt|klima/],
+    ['Geschichte', /geschichte|historisch|jahrhundert|krieg|nachkrieg/],
+    ['Science-Fiction', /science.?fiction|sci.?fi|zukunft|dystop/],
+    ['Liebesfilm', /liebe|romantik|romanze|herz|romantisch/],
+    ['Abenteuer', /abenteuer|expedition|reise/],
+    ['Familie', /familie|kinder|kinderfilm/],
+    ['Horror', /horror|grusel|unheimlich/],
+    ['Spielfilm', /spielfilm|film$/],
+    ['Serie', /serie|staffel|episode|folge\s?\d/],
+    ['Heimat', /heimat|alpen|berg|land/],
+    ['Politik', /politik|wahl|demokrat|partei|bundestag/],
+    ['Wissenschaft', /wissenschaft|forschung|experiment|labor/],
+    ['Musik', /musik|konzert|oper|musical|orchester/],
+    ['Sport', /sport|fußball|tennis|olymp/],
+    ['Kultur', /kultur|kunst|museum|literatur|theater/],
+  ];
+  for (const [genre, regex] of checks) {
+    if (regex.test(text)) genres.push(genre);
+  }
+  return genres.length > 0 ? genres : ['Sonstiges'];
+}
+
+// ─── Formatters ───
+function fmtDuration(s) {
+  if (!s) return '–';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m} Min.`;
+}
+
+function fmtDate(ts) {
+  if (!ts) return '–';
+  return new Date(ts * 1000).toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+function fmtRelDate(ts) {
+  if (!ts) return '';
+  const diff = Date.now()/1000 - ts;
+  if (diff < 86400) return 'Heute';
+  if (diff < 172800) return 'Gestern';
+  if (diff < 604800) return `Vor ${Math.floor(diff/86400)} Tagen`;
+  if (diff < 2592000) return `Vor ${Math.floor(diff/604800)} Wochen`;
+  if (diff < 31536000) return `Vor ${Math.floor(diff/2592000)} Monaten`;
+  return `Vor ${Math.floor(diff/31536000)} Jahren`;
+}
+
+// Check if a mediathek entry is likely expired (content removed by broadcaster)
+function isLikelyExpired(item) {
+  if (!item.timestamp) return false;
+  const ageDays = (Date.now()/1000 - item.timestamp) / 86400;
+  return ageDays > EXPIRY_WARN_DAYS;  // Most mediathek content expires within 30-60 days
+}
+
+function expiryWarning(item) {
+  if (!item.timestamp) return '';
+  const ageDays = (Date.now()/1000 - item.timestamp) / 86400;
+  if (ageDays > EXPIRY_OFFLINE_DAYS) return '⚠ Wahrscheinlich offline';
+  if (ageDays > EXPIRY_WARN_DAYS) return '⚠ Möglicherweise offline';
+  return '';
+}
+
+
+
+function fmtRating(r) {
+  if (!r || r === 0) return null;
+  return r.toFixed(1);
+}
+
+function ratingColor(r) {
+  if (r >= 7.5) return 'var(--green)';
+  if (r >= 6) return 'var(--gold)';
+  if (r >= 4) return 'var(--orange)';
+  return 'var(--red)';
+}
+
+function matchLabel(score) {
+  if (score >= 12) return { text: `🎯 ${score}P – Top Match`, cls: 'match-high' };
+  if (score >= 6) return { text: `🎯 ${score}P – Passt gut`, cls: 'match-med' };
+  if (score >= 3) return { text: `${score}P`, cls: 'match-low' };
+  return null;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s; return d.innerHTML;
+}
+// Vollständiges Attribut-Escaping (vorher fehlten & und <)
+function escAttr(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;');
+}
+// Nur http(s)-URLs zulassen — schützt vor javascript:-URLs aus
+// API-Antworten oder manipuliertem localStorage
+function safeUrl(u) {
+  if (typeof u !== 'string') return '';
+  const t = u.trim();
+  return /^https?:\/\//i.test(t) ? t : '';
+}
+
+// ─── Mediathek API ───
+function buildQuery() {
+  const query = document.getElementById('searchInput').value.trim();
+  const channel = document.getElementById('filterChannel').value;
+  const durationMin = parseInt(document.getElementById('filterDurationMin').value);
+  const durationMax = parseInt(document.getElementById('filterDurationMax').value);
+  const sortVal = document.getElementById('filterSort').value;
+  const size = parseInt(document.getElementById('filterSize').value);
+
+  // For rating/taste sort, we still fetch by timestamp from API
+  const apiSort = (sortVal === 'rating_desc' || sortVal === 'taste_desc')
+    ? ['timestamp', 'desc'] : sortVal.split('_');
+
+  const queries = [];
+  if (query) queries.push({ fields: ['title','topic'], query });
+  if (channel) queries.push({ fields: ['channel'], query: channel });
+
+  const payload = {
+    queries, sortBy: apiSort[0], sortOrder: apiSort[1],
+    future: false, offset: currentOffset, size
+  };
+  if (durationMin > 0) payload.duration_min = durationMin;
+  if (durationMax > 0) payload.duration_max = durationMax;
+  return payload;
+}
+
+async function fetchWithProxy(proxy, payload) {
+  const url = proxy ? proxy + encodeURIComponent(MEDIATHEK_API) : MEDIATHEK_API;
+  // Timeout: ohne AbortController würde ein hängender Proxy die
+  // gesamte Fallback-Kette blockieren
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload), signal: ctrl.signal
+    });
+    // 403/429 etc. gelten als Proxy-Fehler → nächster Proxy wird probiert
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Generische Mediathek-Abfrage mit Proxy-Fallback-Kette
+// (auch von der Personensuche genutzt, die vorher ohne Fallback lief)
+async function fetchMediathek(payload) {
+  if (activeCorsProxy !== '') {
+    try { return await fetchWithProxy(activeCorsProxy, payload); }
+    catch { activeCorsProxy = ''; }
+  }
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const data = await fetchWithProxy(proxy, payload);
+      activeCorsProxy = proxy;
+      return data;
+    } catch (err) {
+      console.warn('Proxy failed:', proxy || '(direct)', err.message);
+    }
+  }
+  return null;
+}
+
+// LRU-Cache für Suchanfragen: erneuter Chip-Klick / Zurück-Blättern
+// lädt nicht neu. Die Items behalten dabei ihr _tmdb → kein Re-Enrichment.
+const queryCache = new Map();
+function queryCacheGet(key) {
+  const e = queryCache.get(key);
+  if (!e) return null;
+  if (Date.now() - e.t > QUERY_CACHE_TTL_MS) { queryCache.delete(key); return null; }
+  queryCache.delete(key); queryCache.set(key, e); // LRU: ans Ende
+  return e.data;
+}
+function queryCacheSet(key, data) {
+  queryCache.set(key, { t: Date.now(), data });
+  if (queryCache.size > QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value);
+}
+
+async function fetchResults() {
+  const payload = buildQuery();
+  const key = JSON.stringify(payload);
+  const cached = queryCacheGet(key);
+  if (cached) return cached;
+  const data = await fetchMediathek(payload);
+  if (data) queryCacheSet(key, data);
+  return data;
+}
+
+// ─── TMDB Background Enrichment ───
+let tmdbEnrichAbort = null; // to cancel enrichment when new search starts
+let lastEnrichRender = 0;
+
+// Zeitbasiertes Render-Throttling: statt ~20 Voll-Renders pro Suche
+// (200 Karten × 20 = 4000 Karten-Renders) höchstens 1 Render pro 800ms.
+function scheduleEnrichRender(force = false) {
+  const now = Date.now();
+  if (!force && now - lastEnrichRender < RENDER_THROTTLE_MS) return;
+  lastEnrichRender = now;
+  applySortAndFilter();
+}
+
+async function enrichWithTMDB_background(results) {
+  // Cancel any running enrichment
+  if (tmdbEnrichAbort) tmdbEnrichAbort.cancelled = true;
+  const ctrl = { cancelled: false };
+  tmdbEnrichAbort = ctrl;
+
+  const statusEl = document.getElementById('tmdbStatus');
+  let done = 0;
+  const total = results.length;
+  statusEl.textContent = `TMDB: 0/${total}`;
+
+  for (let i = 0; i < results.length; i += TMDB_BATCH_SIZE) {
+    if (ctrl.cancelled) return;
+    const batch = results.slice(i, i + TMDB_BATCH_SIZE);
+    const promises = batch.map(async (item) => {
+      if (ctrl.cancelled) return;
+      if (item._tmdb !== undefined) { done++; return; } // already enriched
+      const tmdb = await tmdbSearch(item.title, item.topic);
+      if (ctrl.cancelled) return;
+      item._tmdb = tmdb;
+      item._tasteScore = scoreTaste(item, tmdb, tasteKeywords);
+      done++;
+    });
+    await Promise.all(promises);
+    if (ctrl.cancelled) return;
+
+    statusEl.textContent = `TMDB: ${done}/${total} ⭐`;
+    scheduleEnrichRender();
+  }
+
+  statusEl.textContent = `TMDB: ${done}/${total} ⭐`;
+  scheduleEnrichRender(true); // final render with all data
+}
+
+// ─── Rendering ───
+function renderCard(item, idx) {
+  // detectGenres pro Item nur einmal berechnen (vorher: bei jedem Re-Render,
+  // d.h. während des Enrichments hunderte Male pro Item)
+  const genres = item._genres || (item._genres = detectGenres(item));
+  const tmdb = item._tmdb;
+  const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids) : [];
+  const chClass = getChannelClass(item.channel);
+  const relDate = fmtRelDate(item.timestamp);
+  const rating = tmdb ? fmtRating(tmdb.rating) : null;
+  const tasteScore = item._tasteScore || 0;
+  const match = tasteKeywords ? matchLabel(tasteScore) : null;
+  const desc = (tmdb && tmdb.overview) ? tmdb.overview : (item.description || 'Keine Beschreibung verfügbar.');
+  const urlWebsite = safeUrl(item.url_website);
+  const urlVideo = safeUrl(item.url_video);
+
+  return `
+    <div class="card" tabindex="0" onclick="showDetail(${idx})">
+      <div class="card-poster-row">
+        <div class="card-poster">
+          ${tmdb && tmdb.poster_sm
+            ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
+            : `<div class="no-poster">🎬</div>`}
+        </div>
+        <div class="card-body">
+          <div class="card-header-row">
+            <div class="card-channel ${chClass}">${escHtml(item.channel)}</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${match ? `<span class="taste-match ${match.cls}">${match.text}</span>` : ''}
+              ${rating
+                ? `<div class="card-rating"><span class="rating-star">★</span><span class="rating-value" style="color:${ratingColor(tmdb.rating)}">${rating}</span></div>`
+                : `<span class="rating-na">–</span>`}
+            </div>
+          </div>
+          <div class="card-topic">${escHtml(item.topic)}${tmdb?.person_role ? ` · <span style="color:var(--orange)">${escHtml(tmdb.person_role)}</span>` : ''}</div>
+          <div class="card-title">${escHtml(item.title)}</div>
+          <div class="card-genres">
+            ${tmdbGenres.map(g => `<span class="genre-tag tmdb-genre">${g}</span>`).join('')}
+            ${tmdbGenres.length === 0 ? genres.map(g => `<span class="genre-tag">${g}</span>`).join('') : ''}
+          </div>
+          <div class="card-desc">${escHtml(desc)}</div>
+          <div class="card-meta">
+            <span class="card-meta-item">🕐 ${fmtDuration(item.duration)}</span>
+            <span class="card-meta-item">📅 ${fmtDate(item.timestamp)}</span>
+            ${relDate ? `<span class="card-meta-item" style="color:${isLikelyExpired(item) ? 'var(--red)' : 'var(--green)'}">${relDate}</span>` : ''}
+            ${expiryWarning(item) ? `<span class="card-meta-item" style="color:var(--red);font-size:11px;">${expiryWarning(item)}</span>` : ''}
+            ${tmdb && tmdb.release_date ? `<span class="card-meta-item">🎥 ${tmdb.release_date.substring(0,4)}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="card-actions" onclick="event.stopPropagation()">
+        ${urlWebsite
+          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary">▶ Ansehen</a>`
+          : ''}
+        ${urlVideo
+          ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary">⬇ Stream</a>`
+          : ''}
+        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
+          📌
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function showDetail(idx) {
+  const item = displayedResults[idx];
+  if (!item) return;
+  const genres = item._genres || (item._genres = detectGenres(item));
+  const tmdb = item._tmdb;
+  const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids) : [];
+  const chClass = getChannelClass(item.channel);
+  const rating = tmdb ? fmtRating(tmdb.rating) : null;
+  const tasteScore = item._tasteScore || 0;
+  const match = tasteKeywords ? matchLabel(tasteScore) : null;
+  const desc = (tmdb && tmdb.overview) || item.description || 'Keine Beschreibung verfügbar.';
+  const mediathekDesc = item.description && tmdb?.overview && item.description !== tmdb.overview
+    ? item.description : '';
+
+  document.getElementById('modalContent').innerHTML = `
+    <div class="modal-poster-row">
+      ${tmdb && tmdb.poster
+        ? `<div class="modal-poster"><img src="${escAttr(tmdb.poster)}" alt="Poster"></div>` : ''}
+      <div class="modal-info">
+        <div class="card-channel ${chClass}">${escHtml(item.channel)}</div>
+        <h2>${escHtml(item.title)}</h2>
+        <div style="color:var(--accent);font-size:14px;margin-bottom:8px;">${escHtml(item.topic)}</div>
+        ${tmdb && tmdb.original_title && tmdb.original_title !== item.title
+          ? `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">Originaltitel: ${escHtml(tmdb.original_title)}</div>` : ''}
+        ${tmdb?.person_role ? `<div style="font-size:13px;color:var(--orange);margin-bottom:8px;">🎭 ${escHtml(tmdb.person_role)}</div>` : ''}
+        ${rating ? `
+          <div class="modal-rating">
+            <span>★ ${rating}</span>
+            <span class="rating-label">TMDB (${tmdb.vote_count} Bewertungen)</span>
+          </div>
+        ` : ''}
+        ${match ? `<div style="margin-bottom:12px;"><span class="taste-match ${match.cls}">${match.text}</span></div>` : ''}
+        <div class="meta-row">
+          <span>🕐 ${fmtDuration(item.duration)}</span>
+          <span>📅 ${fmtDate(item.timestamp)}</span>
+          ${fmtRelDate(item.timestamp) ? `<span style="color:var(--green)">${fmtRelDate(item.timestamp)}</span>` : ''}
+          ${tmdb && tmdb.release_date ? `<span>🎥 Erschienen: ${tmdb.release_date}</span>` : ''}
+        </div>
+        <div class="modal-tmdb-genres">
+          ${tmdbGenres.map(g => `<span class="genre-tag tmdb-genre">${g}</span>`).join('')}
+          ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="description">${escHtml(desc)}</div>
+    ${mediathekDesc ? `<div style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6;"><strong>Mediathek-Info:</strong> ${escHtml(mediathekDesc)}</div>` : ''}
+    <div class="actions">
+      ${safeUrl(item.url_website)
+        ? `<a href="${escAttr(safeUrl(item.url_website))}" target="_blank" rel="noopener" class="btn btn-primary">▶ In Mediathek streamen</a>` : ''}
+      ${safeUrl(item.url_video)
+        ? `<a href="${escAttr(safeUrl(item.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary">⬇ Direkter Video-Link</a>` : ''}
+      ${safeUrl(item.url_subtitle)
+        ? `<a href="${escAttr(safeUrl(item.url_subtitle))}" target="_blank" rel="noopener" class="btn btn-secondary">💬 Untertitel</a>` : ''}
+      ${tmdb ? `<a href="https://www.themoviedb.org/${tmdb.tmdb_type || 'movie'}/${encodeURIComponent(tmdb.tmdb_id)}" target="_blank" rel="noopener" class="tmdb-link">↗ Auf TMDB ansehen</a>` : ''}
+    </div>
+  `;
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal(e) {
+  if (e.target === e.currentTarget) {
+    document.getElementById('modal').classList.remove('active');
+  }
+}
+
+// ─── Sort & Filter (client-side after enrichment) ───
+function applySortAndFilter() {
+  const sortVal = document.getElementById('filterSort').value;
+  const minRating = parseFloat(document.getElementById('filterRating').value);
+  const audioFilter = document.getElementById('filterAudio').value;
+  const searchText = document.getElementById('searchInput').value.trim().toLowerCase();
+
+  let filtered = [...enrichedResults];
+
+  // Age/freshness filter
+  const maxAgeDays = parseInt(document.getElementById('filterAge').value);
+  if (maxAgeDays > 0) {
+    const cutoff = Date.now()/1000 - maxAgeDays * 86400;
+    filtered = filtered.filter(r => r.timestamp >= cutoff);
+  }
+
+  // Audio/accessibility variant filter
+  // (Variante pro Item cachen — Regex-Erkennung lief vorher bei jedem Filterlauf neu)
+  const audioOf = r => r._audio || (r._audio = detectAudioVariant(r));
+  if (audioFilter === 'standard') {
+    filtered = filtered.filter(r => audioOf(r) === 'standard');
+  } else if (audioFilter !== 'all') {
+    filtered = filtered.filter(r => audioOf(r) === audioFilter);
+  }
+
+  // Client-side text filter (for quick-chips and re-filtering without API call)
+  if (searchText) {
+    filtered = filtered.filter(r => {
+      const haystack = normDE(`${r.channel} ${r.topic} ${r.title} ${r.description || ''} ${r._tmdb?.overview || ''}`);
+      const words = normDE(searchText).split(/\s+/);
+      return words.every(w => haystack.includes(w));
+    });
+  }
+
+  // Filter by min rating
+  if (minRating > 0) {
+    filtered = filtered.filter(r => {
+      if (r._tmdb === undefined) return true;   // TMDB not yet searched, keep visible for now
+      if (r._tmdb === null) return false;        // searched but no match found, hide
+      return r._tmdb.rating >= minRating;
+    });
+  }
+
+  // Client-side sort for rating and taste
+  if (sortVal === 'rating_desc') {
+    filtered.sort((a, b) => ((b._tmdb?.rating || 0) - (a._tmdb?.rating || 0)));
+  } else if (sortVal === 'taste_desc') {
+    filtered.sort((a, b) => ((b._tasteScore || 0) - (a._tasteScore || 0)));
+  }
+
+  // Update UI counts
+  const filteredInfo = document.getElementById('filteredInfo');
+  if (filtered.length !== enrichedResults.length) {
+    filteredInfo.innerHTML = `<strong>${filtered.length}</strong> angezeigt`;
+  } else {
+    filteredInfo.innerHTML = '';
+  }
+  const channels = new Set(filtered.map(r => r.channel));
+  document.getElementById('senderCount').textContent = channels.size;
+
+  // Offenes Bookmark-Dropdown schließen: nach Re-Sort/Re-Render würde sein
+  // gespeicherter Index sonst auf den falschen Film zeigen
+  closeBookmarkDropdown();
+
+  if (filtered.length === 0) {
+    displayedResults = [];
+    document.getElementById('resultsGrid').innerHTML = '';
+    // Unterscheidung: keine Server-Ergebnisse vs. alles weggefiltert
+    showEmpty(enrichedResults.length > 0
+      ? 'Alle Ergebnisse wurden durch deine Filter ausgeblendet. Lockere Rating-, Tonfassungs- oder Aktualitäts-Filter.'
+      : undefined);
+    // Pagination NICHT verstecken: auf anderen Seiten kann es Treffer geben
+    return;
+  }
+  document.getElementById('emptyState').style.display = 'none';
+
+  // Update displayedResults for correct detail modal indexing
+  displayedResults = filtered;
+  // Ein einziges innerHTML-Assignment für das ganze Grid → 1 Reflow pro Render
+  document.getElementById('resultsGrid').innerHTML = filtered.map((r, i) => renderCard(r, i)).join('');
+  AppEvents.emit('results:rendered', { count: filtered.length });
+}
+
+function rescoreAndRender() {
+  for (const item of enrichedResults) {
+    item._tasteScore = scoreTaste(item, item._tmdb, tasteKeywords);
+  }
+  applySortAndFilter();
+}
+
+// ─── Main Search Flow ───
+
+// UI-Helpers (vorher an 3 Stellen dupliziert)
+function showLoading(subText) {
+  document.getElementById('loadingState').style.display = 'flex';
+  document.getElementById('loadingSub').textContent = subText;
+  document.getElementById('resultsGrid').innerHTML = '';
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('pagination').style.display = 'none';
+  document.getElementById('tmdbStatus').textContent = '';
+  closeBookmarkDropdown();
+}
+
+function showEmpty(msg) {
+  const el = document.getElementById('emptyState');
+  el.querySelector('div:last-child').textContent =
+    msg || 'Keine Ergebnisse gefunden. Versuche eine andere Suche oder passe die Filter an.';
+  el.style.display = 'block';
+}
+
+function updatePagination() {
+  const size = parseInt(document.getElementById('filterSize').value);
+  const pag = document.getElementById('pagination');
+  if (totalResults > size) {
+    pag.style.display = 'flex';
+    const page = Math.floor(currentOffset / size) + 1;
+    const totalPages = Math.ceil(totalResults / size);
+    document.getElementById('pageInfo').textContent = `Seite ${page} von ${totalPages}`;
+    document.getElementById('btnPrev').disabled = currentOffset === 0;
+    document.getElementById('btnNext').disabled = currentOffset + size >= totalResults;
+  } else {
+    pag.style.display = 'none';
+  }
+}
+
+// Suchzustand in die URL spiegeln → Links werden teilbar.
+// try/catch: bei file://-Aufruf verbietet der Browser replaceState mit Query.
+function syncStateToURL() {
+  try {
+    const params = new URLSearchParams();
+    const set = (k, v, def) => { if (v !== def && v !== '') params.set(k, v); };
+    set('q', document.getElementById('searchInput').value.trim(), '');
+    set('sender', document.getElementById('filterChannel').value, '');
+    set('dmin', document.getElementById('filterDurationMin').value, '0');
+    set('dmax', document.getElementById('filterDurationMax').value, '0');
+    set('sort', document.getElementById('filterSort').value, 'timestamp_desc');
+    set('audio', document.getElementById('filterAudio').value, 'standard');
+    set('rating', document.getElementById('filterRating').value, '0');
+    set('age', document.getElementById('filterAge').value, '30');
+    set('size', document.getElementById('filterSize').value, '200');
+    const qs = params.toString();
+    history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+  } catch (e) { /* file:// o.ä. — URL-Sync dann einfach aus */ }
+}
+
+function restoreStateFromURL() {
+  try {
+    const params = new URLSearchParams(location.search);
+    const apply = (k, id) => { if (params.has(k)) document.getElementById(id).value = params.get(k); };
+    apply('q', 'searchInput');
+    apply('sender', 'filterChannel');
+    apply('dmin', 'filterDurationMin');
+    apply('dmax', 'filterDurationMax');
+    apply('sort', 'filterSort');
+    apply('audio', 'filterAudio');
+    apply('rating', 'filterRating');
+    apply('age', 'filterAge');
+    apply('size', 'filterSize');
+  } catch (e) {}
+}
+
+async function doSearch(resetOffset = true, keepChips = false) {
+  if (resetOffset) currentOffset = 0;
+
+  if (!keepChips) {
+    activeQuickFilter = '';  // sonst bleibt der Chip-Zustand inkonsistent zur UI
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  }
+
+  // Race-Schutz: jede Suche bekommt eine Generation. Antworten älterer
+  // Suchen (langsamer Proxy) dürfen den aktuellen Zustand nicht überschreiben.
+  const seq = ++searchSeq;
+
+  showLoading('Mediatheken durchsuchen…');
+  syncStateToURL();
+
+  const data = await fetchResults();
+  if (seq !== searchSeq) return; // veraltete Antwort verwerfen
+
+  document.getElementById('loadingState').style.display = 'none';
+
+  if (!data || !data.result || !data.result.results) {
+    showEmpty('MediathekViewWeb ist gerade nicht erreichbar (auch über Ausweich-Server). Bitte versuche es in ein paar Minuten erneut.');
+    return;
+  }
+
+  lastResults = data.result.results;
+  totalResults = data.result.queryInfo ? data.result.queryInfo.totalResults : lastResults.length;
+  document.getElementById('resultCountTotal').textContent = totalResults.toLocaleString('de-DE');
+
+  if (lastResults.length === 0) {
+    enrichedResults = [];
+    displayedResults = [];
+    showEmpty();
+    updatePagination(); // auf Seite >1 mit leerer Seite: "Zurück" bleibt erreichbar
+    return;
+  }
+
+  // Initialize _tasteScore if not yet set
+  // NOTE: _tmdb stays undefined until TMDB search completes (null = searched, no match)
+  for (const item of lastResults) {
+    if (!item._tasteScore) item._tasteScore = scoreTaste(item, null, tasteKeywords);
+  }
+
+  // IMMEDIATELY show results (without TMDB data)
+  enrichedResults = [...lastResults];
+  applySortAndFilter();
+  updatePagination();
+  AppEvents.emit('search:completed', { total: totalResults, shown: enrichedResults.length });
+
+  // Then enrich with TMDB in background (cards update progressively)
+  enrichWithTMDB_background(enrichedResults);
+}
+
+function nextPage() {
+  const size = parseInt(document.getElementById('filterSize').value);
+  currentOffset += size;
+  doSearch(false);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function prevPage() {
+  const size = parseInt(document.getElementById('filterSize').value);
+  currentOffset = Math.max(0, currentOffset - size);
+  doSearch(false);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+let activeQuickFilter = '';
+
+function quickSearch(term) {
+  // If clicking same chip again, deactivate
+  if (activeQuickFilter === term) {
+    activeQuickFilter = '';
+    document.getElementById('searchInput').value = '';
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    doSearch();
+    return;
+  }
+
+  activeQuickFilter = term;
+  document.getElementById('searchInput').value = term;
+  document.querySelectorAll('.chip').forEach(c => {
+    c.classList.toggle('active', c.textContent.toLowerCase().includes(term.toLowerCase()));
+  });
+
+  // Always do a fresh API search – the cached enrichedResults are from a
+  // different query, so client-side text filtering would miss results.
+  doSearch(true, true);  // keepChips=true so our active chip stays highlighted
+}
+
+function resetAll() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterChannel').value = '';
+  document.getElementById('filterDurationMin').value = '0';
+  document.getElementById('filterDurationMax').value = '0';
+  document.getElementById('filterSort').value = 'timestamp_desc';
+  document.getElementById('filterRating').value = '0';
+  document.getElementById('filterAudio').value = 'standard';
+  document.getElementById('filterAge').value = '30';
+  document.getElementById('filterSize').value = '200';
+  document.getElementById('personInfo').style.display = 'none';
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  doSearch();
+}
+
+// ─── Combined Search (Title + Person in parallel) ───
+function handleSearch() {
+  activeQuickFilter = '';
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  doCombinedSearch();
+}
+
+// ─── Combined Search: Title + Person in parallel ───
+async function doCombinedSearch() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) { doSearch(); return; }
+
+  currentOffset = 0;
+  const seq = ++searchSeq; // Race-Schutz (siehe doSearch)
+
+  showLoading('Mediatheken + TMDB Personen durchsuchen…');
+  document.getElementById('personInfo').style.display = 'none';
+  syncStateToURL();
+
+  // Run title search and person search in PARALLEL
+  const [titleData, personResults] = await Promise.all([
+    fetchResults(),
+    searchPersonInMediathek(query, seq)
+  ]);
+  if (seq !== searchSeq) return; // veraltete Antwort verwerfen
+
+  document.getElementById('loadingState').style.display = 'none';
+
+  // Process title results
+  let titleResults = [];
+  if (titleData?.result?.results) {
+    titleResults = titleData.result.results;
+    for (const item of titleResults) {
+      if (!item._tasteScore) item._tasteScore = scoreTaste(item, null, tasteKeywords);
+    }
+  }
+
+  // Merge: title results + person results, deduplicate (einheitlicher Key)
+  const seen = new Set();
+  const merged = [];
+  for (const r of [...titleResults, ...personResults]) {
+    const key = getItemKey(r);
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(r);
+    }
+  }
+
+  totalResults = titleData?.result?.queryInfo?.totalResults || merged.length;
+  document.getElementById('resultCountTotal').textContent =
+    (merged.length > totalResults ? merged.length : totalResults).toLocaleString('de-DE');
+
+  if (merged.length === 0) {
+    enrichedResults = [];
+    displayedResults = [];
+    if (!titleData) {
+      showEmpty('MediathekViewWeb ist gerade nicht erreichbar (auch über Ausweich-Server). Bitte versuche es in ein paar Minuten erneut.');
+    } else {
+      showEmpty();
+    }
+    return;
+  }
+
+  enrichedResults = merged;
+  applySortAndFilter();
+  updatePagination(); // (bezieht sich nur auf den Titel-Suchanteil)
+  AppEvents.emit('search:completed', { total: totalResults, shown: enrichedResults.length });
+
+  // Background TMDB enrichment for title results that don't have _tmdb yet
+  enrichWithTMDB_background(enrichedResults);
+}
+
+// Search for a person on TMDB and cross-reference with mediathek
+async function searchPersonInMediathek(query, seq) {
+  try {
+    // 1. Search TMDB for person
+    const personData = await fetchJsonSafe(`${TMDB_BASE}/search/person?api_key=${TMDB_API_KEY}&language=de-DE&query=${encodeURIComponent(query)}&page=1`);
+
+    if (!personData || !personData.results || personData.results.length === 0) return [];
+    if (seq !== undefined && seq !== searchSeq) return [];
+
+    // Pick best person match (prefer exact name match)
+    const person = personData.results.find(p =>
+      p.name.toLowerCase() === query.toLowerCase()
+    ) || personData.results[0];
+
+    // Show person info bar
+    document.getElementById('personInfo').style.display = 'block';
+    document.getElementById('personName').textContent = person.name;
+    document.getElementById('personKnown').textContent =
+      `${person.known_for_department || 'Bekannt für'} · ${person.known_for ? person.known_for.length + ' bekannte Werke' : ''}`;
+    document.getElementById('personPhoto').src = person.profile_path
+      ? `${TMDB_IMG}/w185${person.profile_path}` : '';
+    document.getElementById('personPhoto').style.display = person.profile_path ? 'block' : 'none';
+
+    // 2. Get all credits (try both de-DE and en-US for better coverage)
+    const [creditsDe, creditsEn] = await Promise.all([
+      fetchJsonSafe(`${TMDB_BASE}/person/${person.id}/combined_credits?api_key=${TMDB_API_KEY}&language=de-DE`).then(d => d || {}),
+      fetchJsonSafe(`${TMDB_BASE}/person/${person.id}/combined_credits?api_key=${TMDB_API_KEY}&language=en-US`).then(d => d || {})
+    ]);
+
+    const allTitles = new Set();
+    const creditMap = {};
+
+    const processList = (list, role) => {
+      for (const item of (list || [])) {
+        // Use both German and original title for mediathek search
+        const deTitle = item.title || item.name;
+        const origTitle = item.original_title || item.original_name;
+        const titles = [deTitle, origTitle].filter(Boolean);
+        for (const title of titles) {
+          allTitles.add(title);
+          if (!creditMap[title]) {
+            creditMap[title] = {
+              tmdb_id: item.id,
+              title: deTitle || title,
+              media_type: item.media_type,
+              rating: item.vote_average || 0,
+              vote_count: item.vote_count || 0,
+              overview: item.overview || '',
+              poster: item.poster_path ? `${TMDB_IMG}/w342${item.poster_path}` : null,
+              poster_sm: item.poster_path ? `${TMDB_IMG}/w185${item.poster_path}` : null,
+              release_date: item.release_date || item.first_air_date || '',
+              genre_ids: item.genre_ids || [],
+              original_title: origTitle || '',
+              popularity: item.popularity || 0,
+              roles: []
+            };
+          }
+          const roleInfo = role === 'cast'
+            ? (item.character ? `als ${item.character}` : 'Darsteller')
+            : (item.job || 'Crew');
+          if (!creditMap[title].roles.includes(roleInfo)) {
+            creditMap[title].roles.push(roleInfo);
+          }
+        }
+      }
+    };
+
+    // Process DE credits
+    processList(creditsDe.cast, 'cast');
+    processList(creditsDe.crew, 'crew');
+    // Also process EN credits for titles that might only have English names
+    processList(creditsEn.cast, 'cast');
+    processList(creditsEn.crew, 'crew');
+
+    // 3. Search mediathek for top titles
+    const titleArray = [...allTitles];
+    const topTitles = titleArray
+      .map(t => ({ title: t, pop: creditMap[t]?.popularity || 0 }))
+      .sort((a, b) => b.pop - a.pop)
+      .slice(0, PERSON_TITLE_LIMIT)
+      .map(t => t.title);
+
+    let mediathekResults = [];
+    const statusEl = document.getElementById('loadingSub');
+
+    for (let i = 0; i < topTitles.length; i += PERSON_BATCH_SIZE) {
+      if (seq !== undefined && seq !== searchSeq) return []; // neue Suche gestartet → abbrechen
+      const batch = topTitles.slice(i, i + PERSON_BATCH_SIZE);
+      const batchPromises = batch.map(async (title) => {
+        try {
+          const payload = {
+            queries: [{ fields: ['title', 'topic'], query: title }],
+            sortBy: 'timestamp', sortOrder: 'desc',
+            future: false, offset: 0, size: 5,
+            duration_min: 0
+          };
+          // fetchMediathek statt fest verdrahtetem activeCorsProxy:
+          // vorher scheiterten alle Batches stumm, wenn der Proxy kippte
+          const data = await fetchMediathek(payload);
+          if (data?.result?.results) {
+            for (const r of data.result.results) {
+              const credit = creditMap[title];
+              if (credit) {
+                r._tmdb = {
+                  tmdb_id: credit.tmdb_id,
+                  tmdb_type: credit.media_type || 'movie',
+                  rating: credit.rating,
+                  vote_count: credit.vote_count,
+                  overview: credit.overview,
+                  poster: credit.poster,
+                  poster_sm: credit.poster_sm,
+                  release_date: credit.release_date,
+                  genre_ids: credit.genre_ids,
+                  original_title: credit.original_title,
+                  popularity: credit.popularity,
+                  title: credit.title,
+                  person_role: `${person.name}: ${credit.roles.join(', ')}`
+                };
+                r._tasteScore = scoreTaste(r, r._tmdb, tasteKeywords);
+                r._personMatch = true;
+              }
+              mediathekResults.push(r);
+            }
+          }
+        } catch {}
+      });
+      await Promise.all(batchPromises);
+      statusEl.textContent = `${person.name}: ${Math.min(i + PERSON_BATCH_SIZE, topTitles.length)}/${topTitles.length} Titel geprüft, ${mediathekResults.length} in Mediatheken…`;
+    }
+
+    // Deduplicate (einheitlicher Key)
+    const seen = new Set();
+    return mediathekResults.filter(r => {
+      const key = getItemKey(r);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+  } catch (err) {
+    console.error('Person search error:', err);
+    return [];
+  }
+}
+
+function clearPersonInfo() {
+  document.getElementById('personInfo').style.display = 'none';
+}
+
+// ─── Watchlist / Merkliste ───
+// (getItemKey ist oben bei den Helpers definiert — einheitliche Film-ID)
+
+// Struktur-Validierung gegen manipulierte/kaputte localStorage-Daten:
+// ungültige Einträge fliegen raus, URLs werden auf http(s) geprüft,
+// Zahlen gecastet — sonst könnte z.B. w.rating.toFixed() das Rendern crashen
+// oder ein präparierter poster-Wert Markup einschleusen.
+function sanitizeWatchlist(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(w => w && typeof w === 'object' && typeof w.key === 'string' && typeof w.title === 'string')
+    .map(w => ({
+      key: w.key,
+      title: w.title,
+      topic: typeof w.topic === 'string' ? w.topic : '',
+      channel: typeof w.channel === 'string' ? w.channel : '',
+      url_website: safeUrl(w.url_website),
+      url_video: safeUrl(w.url_video),
+      duration: Number(w.duration) || 0,
+      timestamp: Number(w.timestamp) || 0,
+      poster: safeUrl(w.poster),
+      rating: Number(w.rating) || 0,
+      persons: Array.isArray(w.persons) ? w.persons.filter(p => typeof p === 'string') : [],
+      added: Number(w.added) || 0
+    }));
+}
+
+// In-Memory-Cache: vorher lief JSON.parse(localStorage) pro Karte,
+// d.h. 200× pro Render-Zyklus
+let watchlistCache = null;
+
+function loadWatchlist() {
+  if (watchlistCache) return watchlistCache;
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem('metaMediathek_watchlist') || '[]'); } catch { raw = []; }
+  watchlistCache = sanitizeWatchlist(raw);
+  return watchlistCache;
+}
+function saveWatchlist(wl) {
+  watchlistCache = wl;
+  try { localStorage.setItem('metaMediathek_watchlist', JSON.stringify(wl)); } catch(e) {}
+  updateWlCount();
+  AppEvents.emit('watchlist:changed', wl);
+}
+function loadPersons() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('metaMediathek_persons') || '["Tobi","Gesa"]');
+    if (Array.isArray(raw)) {
+      const persons = raw.filter(p => typeof p === 'string' && p.trim());
+      if (persons.length > 0) return persons;
+    }
+  } catch {}
+  return ['Tobi', 'Gesa'];
+}
+function savePersons(persons) {
+  try { localStorage.setItem('metaMediathek_persons', JSON.stringify(persons)); } catch(e) {}
+}
+function getPersonsList() {
+  return loadPersons();
+}
+function isBookmarked(item) {
+  const wl = loadWatchlist();
+  return wl.some(w => w.key === getItemKey(item));
+}
+function isBookmarkedFor(item, person) {
+  const wl = loadWatchlist();
+  const entry = wl.find(w => w.key === getItemKey(item));
+  return entry && entry.persons && entry.persons.includes(person);
+}
+let bmActiveIdx = -1;
+let bmOutsideCloser = null;
+
+function closeBookmarkDropdown() {
+  document.getElementById('globalBmDrop').classList.remove('open');
+  bmActiveIdx = -1;
+  if (bmOutsideCloser) {
+    document.removeEventListener('click', bmOutsideCloser); // Listener-Leak vermeiden
+    bmOutsideCloser = null;
+  }
+}
+
+// Personen-Zeilen: data-Attribut + Event-Delegation statt Inline-onclick.
+// Vorher brach ein Personenname mit Apostroph (z.B. "O'Brien") das
+// generierte onclick-JS — ein echter Injection-Vektor über localStorage.
+function renderBmPersonRows(item) {
+  const persons = getPersonsList();
+  return persons.map(p => `
+    <div class="bm-person" data-person="${escAttr(p)}">
+      <span class="bm-check">${isBookmarkedFor(item, p) ? '✓' : ''}</span>
+      ${escHtml(p)}
+    </div>
+  `).join('');
+}
+
+function openBookmarkMenu(event, idx) {
+  event.stopPropagation();
+  event.preventDefault();
+
+  const dd = document.getElementById('globalBmDrop');
+  const item = displayedResults[idx];
+  if (!item) return;
+  closeBookmarkDropdown(); // evtl. offenes Menü inkl. Alt-Listener aufräumen
+  bmActiveIdx = idx;
+
+  // Position near the clicked button
+  const rect = event.currentTarget.getBoundingClientRect();
+  dd.style.top = (rect.bottom + 4) + 'px';
+  dd.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+
+  document.getElementById('bmPersonsList').innerHTML = renderBmPersonRows(item);
+  dd.classList.add('open');
+
+  // Close on outside click (delayed to not catch this click)
+  setTimeout(() => {
+    if (bmActiveIdx !== idx) return; // inzwischen geschlossen/neu geöffnet
+    bmOutsideCloser = (e) => {
+      if (!dd.contains(e.target)) closeBookmarkDropdown();
+    };
+    document.addEventListener('click', bmOutsideCloser);
+  }, 50);
+}
+
+function toggleBookmark(idx, person) {
+  const item = displayedResults[idx];
+  if (!item) return;
+  const wl = loadWatchlist();
+  const key = getItemKey(item);
+  let entry = wl.find(w => w.key === key);
+
+  if (!entry) {
+    entry = {
+      key,
+      title: item.title,
+      topic: item.topic,
+      channel: item.channel,
+      url_website: item.url_website,
+      url_video: item.url_video,
+      duration: item.duration,
+      timestamp: item.timestamp,
+      poster: item._tmdb?.poster_sm || null,
+      rating: item._tmdb?.rating || 0,
+      persons: [person],
+      added: Date.now()
+    };
+    wl.push(entry);
+  } else {
+    const pIdx = entry.persons.indexOf(person);
+    if (pIdx >= 0) {
+      entry.persons.splice(pIdx, 1);
+      if (entry.persons.length === 0) {
+        wl.splice(wl.indexOf(entry), 1);
+      }
+    } else {
+      entry.persons.push(person);
+    }
+  }
+  saveWatchlist(wl);
+
+  // Re-render the dropdown checkmarks (without closing)
+  const dd = document.getElementById('globalBmDrop');
+  if (dd.classList.contains('open') && bmActiveIdx === idx) {
+    document.getElementById('bmPersonsList').innerHTML = renderBmPersonRows(item);
+  }
+
+  // Update the bookmark button styling without full re-render
+  const cards = document.querySelectorAll('.bookmark-btn');
+  if (cards[idx]) {
+    cards[idx].classList.toggle('bookmarked', isBookmarked(item));
+  }
+
+  renderWatchlist();
+}
+
+function addPersonGlobal() {
+  const input = document.getElementById('bmAddInputGlobal');
+  const name = input.value.trim();
+  if (!name || bmActiveIdx < 0) return;
+  const persons = loadPersons();
+  if (!persons.includes(name)) {
+    persons.push(name);
+    savePersons(persons);
+  }
+  toggleBookmark(bmActiveIdx, name);
+  input.value = '';
+}
+function updateWlCount() {
+  const wl = loadWatchlist();
+  document.getElementById('wlCount').textContent = wl.length;
+}
+function toggleWatchlistPanel() {
+  const panel = document.getElementById('watchlistPanel');
+  const toggle = document.getElementById('watchlistToggle');
+  // Close taste panel if open
+  document.getElementById('tastePanel').classList.remove('active');
+  document.getElementById('profileToggle').classList.remove('active');
+  panel.classList.toggle('active');
+  toggle.classList.toggle('active');
+  if (panel.classList.contains('active')) renderWatchlist();
+}
+let wlFilterPerson = '';
+function filterWatchlist(person) {
+  wlFilterPerson = person;
+  renderWatchlist();
+}
+function renderWatchlist() {
+  const wl = loadWatchlist();
+  const persons = loadPersons();
+  const filterRow = document.getElementById('wlFilterRow');
+  const container = document.getElementById('wlItems');
+
+  // Person filter chips (data-Attribut + Delegation statt Inline-onclick,
+  // damit Sonderzeichen in Namen kein JS brechen)
+  filterRow.innerHTML = `
+    <span class="wl-person-chip ${wlFilterPerson === '' ? 'active' : ''}" data-person="">Alle (${wl.length})</span>
+    ${persons.map(p => {
+      const count = wl.filter(w => w.persons.includes(p)).length;
+      return `<span class="wl-person-chip ${wlFilterPerson === p ? 'active' : ''}" data-person="${escAttr(p)}">${escHtml(p)} (${count})</span>`;
+    }).join('')}
+  `;
+
+  let filtered = wl;
+  if (wlFilterPerson) {
+    filtered = wl.filter(w => w.persons.includes(wlFilterPerson));
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:20px;">Keine Einträge' + (wlFilterPerson ? ` für ${escHtml(wlFilterPerson)}` : '') + '.</div>';
+    return;
+  }
+
+  // Sort by added date (newest first)
+  filtered.sort((a, b) => (b.added || 0) - (a.added || 0));
+
+  container.innerHTML = filtered.map(w => `
+    <div class="wl-item">
+      ${w.poster ? `<img class="wl-item-poster" src="${escAttr(w.poster)}" alt="">` : '<div class="wl-item-poster" style="background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:20px;">🎬</div>'}
+      <div class="wl-item-info">
+        <div class="wl-item-title">${escHtml(w.title)}</div>
+        <div class="wl-item-sub">${escHtml(w.channel)} · ${escHtml(w.topic)} · ${fmtDuration(w.duration)}${w.rating ? ` · ★ ${w.rating.toFixed(1)}` : ''}</div>
+        <div class="wl-item-persons">${w.persons.map(p => `<span class="wl-item-person">${escHtml(p)}</span>`).join('')}</div>
+      </div>
+      <div class="wl-item-actions">
+        ${w.url_website ? `<a href="${escAttr(w.url_website)}" target="_blank" rel="noopener" style="padding:4px 10px;font-size:12px;">▶ Ansehen</a>` : ''}
+        <button class="wl-remove" data-key="${escAttr(w.key)}" aria-label="Von Merkliste entfernen">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+function removeFromWatchlist(key) {
+  let wl = loadWatchlist();
+  wl = wl.filter(w => w.key !== key);
+  saveWatchlist(wl);
+  renderWatchlist();
+  applySortAndFilter();
+}
+
+// ─── Init ───
+document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('modal').classList.remove('active'); });
+
+// Tastaturnavigation: Karten sind fokussierbar (tabindex), Enter/Leertaste öffnet Details
+document.getElementById('resultsGrid').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.card');
+  if (!card || e.target.closest('a, button, input')) return;
+  e.preventDefault();
+  card.click();
+});
+
+// Delegierte Listener (einmalig, kein Listener-Leak bei Re-Renders)
+document.getElementById('bmPersonsList').addEventListener('click', e => {
+  const row = e.target.closest('.bm-person');
+  if (!row) return;
+  e.stopPropagation();
+  if (bmActiveIdx >= 0) toggleBookmark(bmActiveIdx, row.dataset.person);
+});
+document.getElementById('wlFilterRow').addEventListener('click', e => {
+  const chip = e.target.closest('.wl-person-chip');
+  if (chip) filterWatchlist(chip.dataset.person || '');
+});
+document.getElementById('wlItems').addEventListener('click', e => {
+  const btn = e.target.closest('.wl-remove');
+  if (btn) removeFromWatchlist(btn.dataset.key);
+});
+
+// Restore taste profile from localStorage
+try {
+  const saved = localStorage.getItem('metaMediathek_taste');
+  if (typeof saved === 'string' && saved.trim()) {
+    document.getElementById('tasteProfile').value = saved;
+    tasteKeywords = parseTasteProfile(saved);
+    if (tasteKeywords) {
+      document.getElementById('tasteStatus').textContent =
+        `✓ Profil aktiv (${tasteKeywords.positives.length} Vorlieben, ${tasteKeywords.negativeGenres.length} Ausschlüsse)`;
+      document.getElementById('profileToggle').classList.add('active');
+    }
+  }
+} catch(e) {}
+
+// Init watchlist count
+updateWlCount();
+
+// Geteilte Links: Filterzustand aus URL-Parametern wiederherstellen
+restoreStateFromURL();
+
+// Initial load
+doSearch();
+</script>
+</body>
+</html>
