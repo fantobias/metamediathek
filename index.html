@@ -176,7 +176,11 @@
   .card-poster {
     width: 120px; min-height: 170px; flex-shrink: 0;
     background: var(--surface2); display: flex; align-items: center; justify-content: center;
-    overflow: hidden;
+    overflow: hidden; position: relative;
+  }
+  /* og:image-Sendungsbild: liegt über dem Platzhalter, verschwindet bei Ladefehler */
+  .og-poster {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
   }
   .card-poster img {
     width: 100%; height: 100%; object-fit: cover;
@@ -743,13 +747,26 @@
 <script>
 // ─── Config ───
 const MEDIATHEK_API = 'https://mediathekviewweb.de/api/query';
-// SECURITY-TODO: Client-seitiger TMDB-Key ist für den Prototyp (<50 Nutzer,
-// kostenloser Tier) akzeptabel. Bei größerem Rollout: Key hinter einen kleinen
-// Server-Proxy legen (z.B. Cloudflare Worker) und hier nur den Proxy aufrufen.
+
+// API-Modus: Auf Cloudflare Pages (metamediathek.pages.dev) laufen eigene
+// Server-Endpunkte (/api/mediathek, /api/tmdb, /api/ogimage) — dann werden
+// diese genutzt: eigener CORS-Proxy, versteckter TMDB-Key, echte Sendungsbilder.
+// Auf github.io oder file:// läuft die App im Direktmodus wie bisher.
+const API_MODE = location.protocol.startsWith('http') && !location.hostname.endsWith('github.io');
+
+// Fallback-Key für den Direktmodus (github.io / lokale Datei).
+// Im API-Modus wird er NICHT verwendet — dort liegt der Key serverseitig
+// als Cloudflare-Secret (TMDB_API_KEY).
 const TMDB_API_KEY = '2e8e36990eb20bc733fd845b092af8a8';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
 const CORS_PROXIES = ['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+
+// Baut eine TMDB-URL: im API-Modus über den eigenen Proxy (Key bleibt Server-Sache)
+function tmdbApiUrl(path, query) {
+  if (API_MODE) return `/api/tmdb/${path}?${query}`;
+  return `${TMDB_BASE}/${path}?api_key=${TMDB_API_KEY}&${query}`;
+}
 
 // ─── Konstanten (vorher Magic Numbers) ───
 const TMDB_BATCH_SIZE = 5;            // parallele TMDB-Lookups pro Batch (~2-6 Requests pro Item → bleibt unter TMDB-Rate-Limit)
@@ -880,7 +897,7 @@ function generateSearchTitles(title, topic) {
 // Search TMDB with fallback: try movie, then TV
 async function tmdbSearchSingle(query, type = 'movie') {
   const endpoint = type === 'tv' ? 'search/tv' : 'search/movie';
-  const url = `${TMDB_BASE}/${endpoint}?api_key=${TMDB_API_KEY}&language=de-DE&region=DE&query=${encodeURIComponent(query)}&page=1`;
+  const url = tmdbApiUrl(endpoint, `language=de-DE&region=DE&query=${encodeURIComponent(query)}&page=1`);
   const data = await fetchJsonSafe(url);
   return (data && data.results) || [];
 }
@@ -1588,9 +1605,29 @@ async function fetchWithProxy(proxy, payload) {
   }
 }
 
-// Generische Mediathek-Abfrage mit Proxy-Fallback-Kette
-// (auch von der Personensuche genutzt, die vorher ohne Fallback lief)
+// Eigener Server-Proxy (Cloudflare Pages Function) — nur im API-Modus
+async function fetchOwnProxy(payload) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/mediathek', {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload), signal: ctrl.signal
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Generische Mediathek-Abfrage: erst eigener Proxy (API-Modus),
+// dann die bisherige Fallback-Kette (direkt → corsproxy → allorigins)
 async function fetchMediathek(payload) {
+  if (API_MODE) {
+    try { return await fetchOwnProxy(payload); }
+    catch (err) { console.warn('Eigener Proxy nicht erreichbar, nutze Fallback-Kette:', err.message); }
+  }
   if (activeCorsProxy !== '') {
     try { return await fetchWithProxy(activeCorsProxy, payload); }
     catch { activeCorsProxy = ''; }
@@ -1727,7 +1764,9 @@ function renderCard(item, idx) {
         <div class="card-poster">
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
-            : renderPosterPlaceholder(item, genres, chClass)}
+            : renderPosterPlaceholder(item, genres, chClass) + (API_MODE && urlWebsite
+              ? `<img class="og-poster" src="/api/ogimage?url=${encodeURIComponent(urlWebsite)}" alt="" loading="lazy" onerror="this.remove()">`
+              : '')}
         </div>
         <div class="card-body">
           <div class="card-header-row">
@@ -1817,10 +1856,16 @@ function showDetail(idx) {
   const mediathekDesc = item.description && tmdb?.overview && item.description !== tmdb.overview
     ? item.description : '';
 
+  const modalOgUrl = API_MODE && !(tmdb && tmdb.poster) && safeUrl(activeItem.url_website)
+    ? `/api/ogimage?url=${encodeURIComponent(safeUrl(activeItem.url_website))}` : '';
+
   document.getElementById('modalContent').innerHTML = `
     <div class="modal-poster-row">
       ${tmdb && tmdb.poster
-        ? `<div class="modal-poster"><img src="${escAttr(tmdb.poster)}" alt="Poster"></div>` : ''}
+        ? `<div class="modal-poster"><img src="${escAttr(tmdb.poster)}" alt="Poster"></div>`
+        : (modalOgUrl
+          ? `<div class="modal-poster" style="width:220px;"><img src="${escAttr(modalOgUrl)}" alt="" onerror="this.parentElement.remove()"></div>`
+          : '')}
       <div class="modal-info">
         <div class="card-channel ${chClass}">${escHtml(item.channel)}</div>
         <h2>${escHtml(item.title)}</h2>
@@ -2219,7 +2264,7 @@ async function doCombinedSearch() {
 async function searchPersonInMediathek(query, seq) {
   try {
     // 1. Search TMDB for person
-    const personData = await fetchJsonSafe(`${TMDB_BASE}/search/person?api_key=${TMDB_API_KEY}&language=de-DE&query=${encodeURIComponent(query)}&page=1`);
+    const personData = await fetchJsonSafe(tmdbApiUrl('search/person', `language=de-DE&query=${encodeURIComponent(query)}&page=1`));
 
     if (!personData || !personData.results || personData.results.length === 0) return [];
     if (seq !== undefined && seq !== searchSeq) return [];
@@ -2240,8 +2285,8 @@ async function searchPersonInMediathek(query, seq) {
 
     // 2. Get all credits (try both de-DE and en-US for better coverage)
     const [creditsDe, creditsEn] = await Promise.all([
-      fetchJsonSafe(`${TMDB_BASE}/person/${person.id}/combined_credits?api_key=${TMDB_API_KEY}&language=de-DE`).then(d => d || {}),
-      fetchJsonSafe(`${TMDB_BASE}/person/${person.id}/combined_credits?api_key=${TMDB_API_KEY}&language=en-US`).then(d => d || {})
+      fetchJsonSafe(tmdbApiUrl(`person/${person.id}/combined_credits`, 'language=de-DE')).then(d => d || {}),
+      fetchJsonSafe(tmdbApiUrl(`person/${person.id}/combined_credits`, 'language=en-US')).then(d => d || {})
     ]);
 
     const allTitles = new Set();
