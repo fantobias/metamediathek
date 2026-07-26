@@ -230,6 +230,26 @@
   .card-actions { display: flex; gap: 8px; padding: 0 14px 14px; }
   .card-actions .btn { flex: 1; text-align: center; font-size: 12px; padding: 7px; text-decoration: none; }
 
+  /* Fassungs-Chips (Tonfassungen gruppiert auf einer Kachel) */
+  .fassungen {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 8px 14px 0;
+  }
+  .f-label {
+    font-size: 10px; color: var(--text-dim); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .f-chip {
+    font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 14px;
+    border: 1px solid var(--border); background: var(--surface2); color: var(--text-dim);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .f-chip:hover:not(.single) { border-color: var(--accent); color: var(--accent); }
+  .f-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .f-chip.single { cursor: default; background: var(--tag-bg); border-color: var(--border); color: var(--text-dim); }
+  .f-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .modal .fassungen { padding: 0; margin-bottom: 12px; }
+
   /* Taste match indicator */
   .taste-match {
     display: inline-flex; align-items: center; gap: 4px;
@@ -448,6 +468,7 @@
     .card-actions .btn, .bookmark-btn {
       min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
     }
+    .f-chip { min-height: 44px; display: inline-flex; align-items: center; }
     .pagination .btn { min-height: 44px; }
     .taste-panel { margin: 12px 16px; }
     .taste-textarea { font-size: 16px; }
@@ -579,12 +600,12 @@
     <div class="filter-group">
       <span class="filter-label">Tonfassung</span>
       <select class="filter-select" id="filterAudio" onchange="applySortAndFilter()">
-        <option value="standard" selected>Standard (ohne AD/DGS/OV)</option>
-        <option value="all">Alle Fassungen</option>
-        <option value="ad">Nur Audiodeskription</option>
-        <option value="dgs">Nur Gebärdensprache</option>
-        <option value="ov">Nur Originalton</option>
-        <option value="omu">Nur OmU</option>
+        <option value="standard" selected>Alle (Fassungen gruppiert)</option>
+        <option value="ut">Nur mit Untertitel-Fassung</option>
+        <option value="ad">Nur mit Audiodeskription</option>
+        <option value="dgs">Nur mit Gebärdensprache</option>
+        <option value="ov">Nur mit Originalton</option>
+        <option value="omu">Nur mit OmU</option>
       </select>
     </div>
     <div class="filter-group">
@@ -1310,10 +1331,88 @@ function detectAudioVariant(item) {
   if (/audiodeskription|\(ad\)|audio.?deskription|\bAD\b/.test(text)) return 'ad';
   if (/gebärdensprache|\(dgs\)|deutsche gebärdensprache/.test(text)) return 'dgs';
   if (/\(omu\)|original mit untertitel|originalfassung mit untertitel/.test(text)) return 'omu';
+  if (/\(mit untertiteln?\)|\(untertiteln?\)/.test(text)) return 'ut';
   if (/\(ov\)|\(of\)|originalversion|originalton|originalfassung|english version|version originale/.test(text)) return 'ov';
   if (/hörfassung/.test(text)) return 'ad';
   if (/leichte sprache/.test(text)) return 'leicht';
   return 'standard';
+}
+
+// ─── Fassungs-Gruppierung ───
+// Gleiche Sendung in mehreren Tonfassungen (UT/AD/OmU/…) wird zu EINER
+// Kachel mit wählbaren Fassungs-Chips zusammengefasst.
+const VARIANT_ORDER = ['standard', 'ut', 'omu', 'ov', 'ad', 'dgs', 'leicht'];
+const VARIANT_LABELS = {
+  standard: 'Standard', ut: '💬 UT', ad: '🎧 AD', dgs: '🤟 DGS',
+  omu: '🌐 OmU', ov: '🌐 OV', leicht: '📖 Leicht'
+};
+const VARIANT_DURATION_TOLERANCE = 300; // Sek. — nur ähnlich lange Einträge gruppieren (Trailer/Clips bleiben eigenständig)
+
+// Fassungs-Suffixe vom Titel entfernen, um den Gruppierungs-Schlüssel zu bilden
+function stripVariantSuffix(title) {
+  let s = (title || '').trim();
+  const patterns = [
+    /\s*\((mit\s+)?untertiteln?\)\s*$/i,
+    /\s*\((mit\s+)?audiodeskription\)\s*$/i,
+    /\s*\(h(ö|oe)rfassung\)\s*$/i,
+    /\s*\((omu|omeu|ov|originalversion|originalfassung|originalton|ad|dgs|geb(ä|ae)rdensprache|deutsche\s+geb(ä|ae)rdensprache|leichte\s+sprache)\)\s*$/i,
+    /\s*[-–|]\s*(audiodeskription|h(ö|oe)rfassung|omu|ov|dgs|geb(ä|ae)rdensprache|mit\s+untertiteln?|leichte\s+sprache)\s*$/i
+  ];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const p of patterns) {
+      const n = s.replace(p, '');
+      if (n !== s) { s = n.trim(); changed = true; }
+    }
+  }
+  return s;
+}
+
+function groupVariants(results) {
+  const groups = new Map();
+  for (const item of results) {
+    item._audio = item._audio || detectAudioVariant(item);
+    // Sender + Topic sind Pflichtkriterium — schützt vor Fehlgruppierung bei Serien
+    const key = `${item.channel}|||${item.topic}|||${normDE(stripVariantSuffix(item.title))}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const out = [];
+  for (const list of groups.values()) {
+    // Innerhalb der Gruppe nur ähnlich lange Einträge zusammenfassen
+    const clusters = [];
+    for (const item of list) {
+      const c = clusters.find(cl => Math.abs((cl[0].duration || 0) - (item.duration || 0)) <= VARIANT_DURATION_TOLERANCE);
+      if (c) c.push(item); else clusters.push([item]);
+    }
+    for (const cluster of clusters) {
+      cluster.sort((a, b) => VARIANT_ORDER.indexOf(a._audio) - VARIANT_ORDER.indexOf(b._audio));
+      const primary = cluster[0];
+      const seen = new Set();
+      const variants = [];
+      for (const item of cluster) {
+        if (seen.has(item._audio)) continue; // doppelte gleiche Fassung (z.B. Wiederholung) → neueste behalten
+        seen.add(item._audio);
+        variants.push({ variant: item._audio, item });
+        // TMDB-Daten einer Variante an den Primary vererben (z.B. aus Personensuche)
+        if (primary._tmdb === undefined && item._tmdb !== undefined) primary._tmdb = item._tmdb;
+      }
+      primary._variants = variants.length > 1 ? variants : null;
+      if (primary._variants && (!primary._activeVariant || !variants.some(v => v.variant === primary._activeVariant))) {
+        primary._activeVariant = variants[0].variant;
+      }
+      out.push(primary);
+    }
+  }
+  return out;
+}
+
+// Liefert das Item der aktuell gewählten Fassung einer Gruppe (oder das Item selbst)
+function getActiveVariantItem(item) {
+  if (!item._variants) return item;
+  const v = item._variants.find(x => x.variant === item._activeVariant);
+  return v ? v.item : item;
 }
 
 function detectGenres(item) {
@@ -1579,8 +1678,11 @@ function renderCard(item, idx) {
   const tasteScore = item._tasteScore || 0;
   const match = tasteKeywords ? matchLabel(tasteScore) : null;
   const desc = (tmdb && tmdb.overview) ? tmdb.overview : (item.description || 'Keine Beschreibung verfügbar.');
-  const urlWebsite = safeUrl(item.url_website);
-  const urlVideo = safeUrl(item.url_video);
+  // Links zeigen auf die gewählte Fassung der Gruppe
+  const activeItem = getActiveVariantItem(item);
+  const urlWebsite = safeUrl(activeItem.url_website);
+  const urlVideo = safeUrl(activeItem.url_video);
+  const audioVariant = item._audio || (item._audio = detectAudioVariant(item));
 
   return `
     <div class="card" tabindex="0" onclick="showDetail(${idx})">
@@ -1616,6 +1718,15 @@ function renderCard(item, idx) {
           </div>
         </div>
       </div>
+      ${item._variants ? `
+      <div class="fassungen">
+        <span class="f-label">Fassung</span>
+        ${item._variants.map(v => `<span class="f-chip ${v.variant === item._activeVariant ? 'active' : ''}" role="button" tabindex="0" data-idx="${idx}" data-variant="${v.variant}" onclick="event.stopPropagation(); selectVariant(${idx}, '${v.variant}')">${VARIANT_LABELS[v.variant] || v.variant}</span>`).join('')}
+      </div>` : (audioVariant !== 'standard' ? `
+      <div class="fassungen">
+        <span class="f-label">Fassung</span>
+        <span class="f-chip single">${VARIANT_LABELS[audioVariant] || audioVariant}</span>
+      </div>` : '')}
       <div class="card-actions" onclick="event.stopPropagation()">
         ${urlWebsite
           ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary">▶ Ansehen</a>`
@@ -1631,9 +1742,33 @@ function renderCard(item, idx) {
   `;
 }
 
+// Fassung auf der Kachel wechseln: nur diese eine Kachel neu rendern (kein Grid-Reflow)
+function selectVariant(idx, variant) {
+  const item = displayedResults[idx];
+  if (!item || !item._variants) return;
+  item._activeVariant = variant;
+  const grid = document.getElementById('resultsGrid');
+  if (grid.children[idx]) {
+    grid.children[idx].outerHTML = renderCard(item, idx);
+    const chip = grid.children[idx].querySelector(`.f-chip[data-variant="${variant}"]`);
+    if (chip) chip.focus(); // Tastatur-Fokus nach Re-Render erhalten
+  }
+}
+
+// Fassung im Detail-Modal wechseln: Modal + zugehörige Kachel aktualisieren
+function selectVariantModal(idx, variant) {
+  const item = displayedResults[idx];
+  if (!item || !item._variants) return;
+  item._activeVariant = variant;
+  showDetail(idx);
+  const grid = document.getElementById('resultsGrid');
+  if (grid.children[idx]) grid.children[idx].outerHTML = renderCard(item, idx);
+}
+
 function showDetail(idx) {
   const item = displayedResults[idx];
   if (!item) return;
+  const activeItem = getActiveVariantItem(item);
   const genres = item._genres || (item._genres = detectGenres(item));
   const tmdb = item._tmdb;
   const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids) : [];
@@ -1669,6 +1804,11 @@ function showDetail(idx) {
           ${fmtRelDate(item.timestamp) ? `<span style="color:var(--green)">${fmtRelDate(item.timestamp)}</span>` : ''}
           ${tmdb && tmdb.release_date ? `<span>🎥 Erschienen: ${tmdb.release_date}</span>` : ''}
         </div>
+        ${item._variants ? `
+        <div class="fassungen">
+          <span class="f-label">Fassung</span>
+          ${item._variants.map(v => `<span class="f-chip ${v.variant === item._activeVariant ? 'active' : ''}" role="button" tabindex="0" onclick="selectVariantModal(${idx}, '${v.variant}')">${VARIANT_LABELS[v.variant] || v.variant}</span>`).join('')}
+        </div>` : ''}
         <div class="modal-tmdb-genres">
           ${tmdbGenres.map(g => `<span class="genre-tag tmdb-genre">${g}</span>`).join('')}
           ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
@@ -1678,12 +1818,12 @@ function showDetail(idx) {
     <div class="description">${escHtml(desc)}</div>
     ${mediathekDesc ? `<div style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6;"><strong>Mediathek-Info:</strong> ${escHtml(mediathekDesc)}</div>` : ''}
     <div class="actions">
-      ${safeUrl(item.url_website)
-        ? `<a href="${escAttr(safeUrl(item.url_website))}" target="_blank" rel="noopener" class="btn btn-primary">▶ In Mediathek streamen</a>` : ''}
-      ${safeUrl(item.url_video)
-        ? `<a href="${escAttr(safeUrl(item.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary">⬇ Direkter Video-Link</a>` : ''}
-      ${safeUrl(item.url_subtitle)
-        ? `<a href="${escAttr(safeUrl(item.url_subtitle))}" target="_blank" rel="noopener" class="btn btn-secondary">💬 Untertitel</a>` : ''}
+      ${safeUrl(activeItem.url_website)
+        ? `<a href="${escAttr(safeUrl(activeItem.url_website))}" target="_blank" rel="noopener" class="btn btn-primary">▶ In Mediathek streamen</a>` : ''}
+      ${safeUrl(activeItem.url_video)
+        ? `<a href="${escAttr(safeUrl(activeItem.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary">⬇ Direkter Video-Link</a>` : ''}
+      ${safeUrl(activeItem.url_subtitle)
+        ? `<a href="${escAttr(safeUrl(activeItem.url_subtitle))}" target="_blank" rel="noopener" class="btn btn-secondary">💬 Untertitel</a>` : ''}
       ${tmdb ? `<a href="https://www.themoviedb.org/${tmdb.tmdb_type || 'movie'}/${encodeURIComponent(tmdb.tmdb_id)}" target="_blank" rel="noopener" class="tmdb-link">↗ Auf TMDB ansehen</a>` : ''}
     </div>
   `;
@@ -1712,13 +1852,16 @@ function applySortAndFilter() {
     filtered = filtered.filter(r => r.timestamp >= cutoff);
   }
 
-  // Audio/accessibility variant filter
-  // (Variante pro Item cachen — Regex-Erkennung lief vorher bei jedem Filterlauf neu)
+  // Tonfassungs-Filter: Fassungen sind gruppiert — die Standardansicht zeigt
+  // alle Gruppen; eine spezifische Auswahl zeigt nur Gruppen, die diese
+  // Fassung anbieten, und wählt sie auf der Kachel vor
   const audioOf = r => r._audio || (r._audio = detectAudioVariant(r));
-  if (audioFilter === 'standard') {
-    filtered = filtered.filter(r => audioOf(r) === 'standard');
-  } else if (audioFilter !== 'all') {
-    filtered = filtered.filter(r => audioOf(r) === audioFilter);
+  if (audioFilter !== 'standard' && audioFilter !== 'all') {
+    filtered = filtered.filter(r => {
+      const inVariants = r._variants && r._variants.some(v => v.variant === audioFilter);
+      if (inVariants) r._activeVariant = audioFilter;
+      return inVariants || audioOf(r) === audioFilter;
+    });
   }
 
   // Client-side text filter (for quick-chips and re-filtering without API call)
@@ -1901,7 +2044,8 @@ async function doSearch(resetOffset = true, keepChips = false) {
   }
 
   // IMMEDIATELY show results (without TMDB data)
-  enrichedResults = [...lastResults];
+  // Tonfassungen derselben Sendung zu einer Kachel gruppieren
+  enrichedResults = groupVariants(lastResults);
   applySortAndFilter();
   updatePagination();
   AppEvents.emit('search:completed', { total: totalResults, shown: enrichedResults.length });
@@ -2025,7 +2169,7 @@ async function doCombinedSearch() {
     return;
   }
 
-  enrichedResults = merged;
+  enrichedResults = groupVariants(merged);
   applySortAndFilter();
   updatePagination(); // (bezieht sich nur auf den Titel-Suchanteil)
   AppEvents.emit('search:completed', { total: totalResults, shown: enrichedResults.length });
@@ -2446,6 +2590,12 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') document.get
 // Tastaturnavigation: Karten sind fokussierbar (tabindex), Enter/Leertaste öffnet Details
 document.getElementById('resultsGrid').addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
+  const chip = e.target.closest('.f-chip[data-variant]');
+  if (chip) {
+    e.preventDefault();
+    selectVariant(parseInt(chip.dataset.idx, 10), chip.dataset.variant);
+    return;
+  }
   const card = e.target.closest('.card');
   if (!card || e.target.closest('a, button, input')) return;
   e.preventDefault();
