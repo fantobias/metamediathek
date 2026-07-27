@@ -792,6 +792,7 @@ const PERSON_BATCH_SIZE = 4;          // parallele Mediathek-Queries bei Persone
 const EXPIRY_WARN_DAYS = 183;         // ab ~6 Monaten nach Veröffentlichung "Möglicherweise offline"
 const EXPIRY_OFFLINE_DAYS = 365;      // ab hier "Wahrscheinlich offline"
 const QUERY_CACHE_MAX = 20;           // gecachte Mediathek-Antworten (LRU)
+const TASTE_MIN_SCORE = 3;            // Geschmacks-Ansicht: mind. "leicht passend" (Punkte-Label-Schwelle)
 const QUERY_CACHE_TTL_MS = 10 * 60 * 1000;
 
 // ─── State ───
@@ -1268,7 +1269,8 @@ function parseTasteProfile(text) {
     'kein', 'keine', 'keinen', 'keiner', 'nicht', 'ohne', 'lieber', 'eher',
     'manchmal', 'immer', 'alles', 'etwas', 'dinge', 'gucke', 'wenig',
     'filme', 'film', 'serien', 'serie', 'sendung', 'sendungen', 'beiträge',
-    'schaue', 'sehe', 'suche', 'interesse', 'interessiert', 'besonders',
+    'schaue', 'sehe', 'suche', 'interesse', 'interessiert', 'interessiere',
+    'interessieren', 'begeistert', 'begeistern', 'fasziniert', 'besonders',
     'liebe', 'bevorzuge', 'favoriten', 'empfehlung', 'empfehlungen',
     'thema', 'themen', 'genre', 'art', 'kategorie', 'typ',
   ]);
@@ -1354,6 +1356,9 @@ function scoreTaste(item, tmdb, profile, explain = false) {
         if (reasons) reasons.push({ pts: 3, text: `Themen-Wort "${kw}"${m.via ? ` (über Synonym "${m.via}")` : ''} passt zum Filmtext` });
       }
     }
+    // Mehrfach-Treffer belohnen — aber KEIN Abzug mehr bei nur einem Treffer:
+    // Profile nennen oft Alternativen ("Arabisches bzw. Islam" = ODER),
+    // da ist ein einzelner Themen-Treffer ein echtes Signal, kein Zufall
     if (totalTopicKeywords >= 2) {
       const matchRatio = keywordHits / totalTopicKeywords;
       if (matchRatio >= 0.8) {
@@ -1362,10 +1367,6 @@ function scoreTaste(item, tmdb, profile, explain = false) {
       } else if (matchRatio >= 0.5) {
         score += 2;
         if (reasons) reasons.push({ pts: 2, text: `Bonus: gute Themen-Abdeckung (${keywordHits}/${totalTopicKeywords})` });
-      } else if (keywordHits <= 1 && totalTopicKeywords >= 2) {
-        const malus = Math.min(2, score);
-        score = Math.max(0, score - 2);
-        if (reasons && malus > 0) reasons.push({ pts: -malus, text: `Abzug: nur ${keywordHits} von ${totalTopicKeywords} Themen-Wörtern trifft (vermutlich Zufallstreffer)` });
       }
     }
   }
@@ -2108,6 +2109,14 @@ function applySortAndFilter() {
     });
   }
 
+  // Geschmacks-Ansicht: bei Sortierung nach Match nur Filme zeigen, die
+  // mindestens leicht zum Profil passen — sonst folgt auf die Treffer
+  // eine lange Liste völlig unpassender Einträge. Sortierung wechseln
+  // (z.B. "Neueste zuerst") zeigt wieder alles.
+  if (tasteKeywords && sortVal === 'taste_desc') {
+    filtered = filtered.filter(r => (r._tasteScore || 0) >= TASTE_MIN_SCORE);
+  }
+
   // Client-side sort for rating and taste
   if (sortVal === 'rating_desc') {
     filtered.sort((a, b) => ((b._tmdb?.rating || 0) - (a._tmdb?.rating || 0)));
@@ -2134,7 +2143,9 @@ function applySortAndFilter() {
     document.getElementById('resultsGrid').innerHTML = '';
     // Unterscheidung: keine Server-Ergebnisse vs. alles weggefiltert
     showEmpty(enrichedResults.length > 0
-      ? 'Alle Ergebnisse wurden durch deine Filter ausgeblendet. Lockere Rating-, Tonfassungs- oder Aktualitäts-Filter.'
+      ? (tasteKeywords && sortVal === 'taste_desc'
+        ? 'Kein Ergebnis passt zu deinem Geschmacksprofil. Formuliere das Profil breiter — oder wechsle die Sortierung (z.B. "Neueste zuerst"), um alle Ergebnisse zu sehen.'
+        : 'Alle Ergebnisse wurden durch deine Filter ausgeblendet. Lockere Rating-, Tonfassungs- oder Aktualitäts-Filter.')
       : undefined);
     // Pagination NICHT verstecken: auf anderen Seiten kann es Treffer geben
     return;
