@@ -640,9 +640,9 @@
       <span class="filter-label">Aktualität</span>
       <select class="filter-select" id="filterAge" onchange="applySortAndFilter()">
         <option value="7">Letzte 7 Tage</option>
-        <option value="30" selected>Letzte 30 Tage</option>
+        <option value="30">Letzte 30 Tage</option>
         <option value="90">Letzte 3 Monate</option>
-        <option value="365">Letztes Jahr</option>
+        <option value="365" selected>Letztes Jahr</option>
         <option value="0">Beliebig</option>
       </select>
     </div>
@@ -774,7 +774,7 @@ const RENDER_THROTTLE_MS = 800;       // max. Re-Render-Frequenz während TMDB-E
 const FETCH_TIMEOUT_MS = 12000;       // Timeout pro Netzwerk-Request (sonst blockiert ein Hänger die Proxy-Fallback-Kette)
 const PERSON_TITLE_LIMIT = 50;        // max. TMDB-Credits, die in Mediatheken gesucht werden
 const PERSON_BATCH_SIZE = 4;          // parallele Mediathek-Queries bei Personensuche
-const EXPIRY_WARN_DAYS = 60;          // ab hier "Möglicherweise offline"
+const EXPIRY_WARN_DAYS = 183;         // ab ~6 Monaten nach Veröffentlichung "Möglicherweise offline"
 const EXPIRY_OFFLINE_DAYS = 365;      // ab hier "Wahrscheinlich offline"
 const QUERY_CACHE_MAX = 20;           // gecachte Mediathek-Antworten (LRU)
 const QUERY_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -1506,7 +1506,7 @@ function fmtRelDate(ts) {
 function isLikelyExpired(item) {
   if (!item.timestamp) return false;
   const ageDays = (Date.now()/1000 - item.timestamp) / 86400;
-  return ageDays > EXPIRY_WARN_DAYS;  // Most mediathek content expires within 30-60 days
+  return ageDays > EXPIRY_WARN_DAYS;  // Warnschwelle: ~6 Monate nach Veröffentlichung
 }
 
 function expiryWarning(item) {
@@ -2059,7 +2059,7 @@ function syncStateToURL() {
     set('sort', document.getElementById('filterSort').value, 'timestamp_desc');
     set('audio', document.getElementById('filterAudio').value, 'standard');
     set('rating', document.getElementById('filterRating').value, '0');
-    set('age', document.getElementById('filterAge').value, '30');
+    set('age', document.getElementById('filterAge').value, '365');
     set('size', document.getElementById('filterSize').value, '200');
     const qs = params.toString();
     history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
@@ -2181,7 +2181,7 @@ function resetAll() {
   document.getElementById('filterSort').value = 'timestamp_desc';
   document.getElementById('filterRating').value = '0';
   document.getElementById('filterAudio').value = 'standard';
-  document.getElementById('filterAge').value = '30';
+  document.getElementById('filterAge').value = '365';
   document.getElementById('filterSize').value = '200';
   document.getElementById('personInfo').style.display = 'none';
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
