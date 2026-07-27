@@ -439,6 +439,21 @@
   .wl-item-actions .wl-remove { color: var(--red); }
   .wl-item-actions .wl-remove:hover { border-color: var(--red); }
 
+  /* Warum-Anzeige: Punkte-Herleitung des Geschmacks-Matches im Modal */
+  .taste-explain {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 16px; font-size: 12.5px; line-height: 1.6;
+  }
+  .taste-explain h4 { font-size: 13px; margin-bottom: 8px; }
+  .te-row { display: flex; gap: 8px; align-items: baseline; }
+  .te-pts { flex: 0 0 34px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .te-pts.plus { color: var(--green); }
+  .te-pts.minus { color: var(--red); }
+  .te-profile {
+    margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border);
+    color: var(--text-dim); font-size: 11.5px;
+  }
+
   /* Sort by rating highlight */
   .sort-rating-active { border-color: var(--gold) !important; }
 
@@ -1237,11 +1252,15 @@ function parseTasteProfile(text) {
   return { positives, negativeGenres, contentKeywords, contentPhrases, rawText: lower };
 }
 
-function scoreTaste(item, tmdb, profile) {
-  if (!profile) return 0;
+// Bewertet einen Film gegen das Geschmacksprofil.
+// Mit explain=true wird zusätzlich die komplette Punkte-Herleitung
+// zurückgegeben ({ score, reasons }) — für die Warum-Anzeige im Modal.
+function scoreTaste(item, tmdb, profile, explain = false) {
+  if (!profile) return explain ? { score: 0, reasons: [] } : 0;
   const text = normDE(`${item.topic} ${item.title} ${item.description || ''} ${tmdb?.overview || ''}`);
   const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids).map(g => normDE(g)) : [];
   let score = 0;
+  const reasons = explain ? [] : null;
   const totalTopicKeywords = (profile.contentKeywords || []).length;
 
   // 1) Phrase matches (HIGHEST weight — e.g. "palästina konflikt" as phrase)
@@ -1249,6 +1268,7 @@ function scoreTaste(item, tmdb, profile) {
     for (const phrase of profile.contentPhrases) {
       if (text.includes(phrase)) {
         score += 10;  // very strong: phrase found as-is
+        if (reasons) reasons.push({ pts: 10, text: `Wortfolge "${phrase}" kommt im Filmtext vor` });
       }
     }
   }
@@ -1260,19 +1280,21 @@ function scoreTaste(item, tmdb, profile) {
       if (text.includes(kw)) {
         keywordHits++;
         score += 3;
+        if (reasons) reasons.push({ pts: 3, text: `Themen-Wort "${kw}" kommt im Filmtext vor` });
       }
     }
-    // If user specified multiple topic keywords, reward items that match most/all of them
-    // and penalize items that only match one generic word
     if (totalTopicKeywords >= 2) {
       const matchRatio = keywordHits / totalTopicKeywords;
       if (matchRatio >= 0.8) {
-        score += 6;  // nearly all keywords match → strong topic fit
+        score += 6;
+        if (reasons) reasons.push({ pts: 6, text: `Bonus: fast alle Themen-Wörter treffen (${keywordHits}/${totalTopicKeywords})` });
       } else if (matchRatio >= 0.5) {
-        score += 2;  // decent overlap
+        score += 2;
+        if (reasons) reasons.push({ pts: 2, text: `Bonus: gute Themen-Abdeckung (${keywordHits}/${totalTopicKeywords})` });
       } else if (keywordHits <= 1 && totalTopicKeywords >= 2) {
-        // Only 1 out of 2+ keywords matched — likely a false positive (e.g. just "konflikt")
+        const malus = Math.min(2, score);
         score = Math.max(0, score - 2);
+        if (reasons && malus > 0) reasons.push({ pts: -malus, text: `Abzug: nur ${keywordHits} von ${totalTopicKeywords} Themen-Wörtern trifft (vermutlich Zufallstreffer)` });
       }
     }
   }
@@ -1282,6 +1304,7 @@ function scoreTaste(item, tmdb, profile) {
     for (const term of sig.terms) {
       if (text.includes(term)) {
         score += sig.weight;
+        if (reasons) reasons.push({ pts: sig.weight, text: `Genre-Signal "${sig.genre}": Begriff "${term}" im Filmtext` });
         break;
       }
     }
@@ -1289,6 +1312,7 @@ function scoreTaste(item, tmdb, profile) {
     for (const tg of tmdbGenres) {
       if (sig.terms.some(t => tg.includes(t) || t.includes(tg))) {
         score += sig.weight;
+        if (reasons) reasons.push({ pts: sig.weight, text: `Genre-Signal "${sig.genre}": passt zum TMDB-Genre "${tg}"` });
         break;
       }
     }
@@ -1299,12 +1323,13 @@ function scoreTaste(item, tmdb, profile) {
     for (const term of sig.terms) {
       if (text.includes(term)) {
         score -= sig.weight * 2;
+        if (reasons) reasons.push({ pts: -sig.weight * 2, text: `Ausschluss "${sig.genre}": Begriff "${term}" im Filmtext` });
         break;
       }
     }
   }
 
-  return score;
+  return explain ? { score, reasons } : score;
 }
 
 function applyTasteProfile() {
@@ -1841,6 +1866,30 @@ function selectVariantModal(idx, variant) {
   if (grid.children[idx]) grid.children[idx].outerHTML = renderCard(item, idx);
 }
 
+// Warum-Anzeige: legt die Punkte-Herleitung des Geschmacks-Matches offen.
+// Zweck: am echten Verhalten sichtbar machen, wo die Profil-Logik greift
+// oder danebengreift — Grundlage für spätere Verbesserungen.
+function renderTasteExplain(item) {
+  if (!tasteKeywords) return '';
+  const { score, reasons } = scoreTaste(item, item._tmdb, tasteKeywords, true);
+  const rows = reasons.map(r => `
+    <div class="te-row">
+      <span class="te-pts ${r.pts >= 0 ? 'plus' : 'minus'}">${r.pts >= 0 ? '+' : ''}${r.pts}</span>
+      <span>${escHtml(r.text)}</span>
+    </div>`).join('');
+  const kws = tasteKeywords.contentKeywords || [];
+  const profilInfo = `Dein Profil, so wie die App es versteht: `
+    + `${tasteKeywords.positives.length} Genre-Signale (${escHtml(tasteKeywords.positives.map(p => p.genre).join(', ') || '–')}) · `
+    + `${kws.length} Themen-Wörter (${escHtml(kws.slice(0, 8).join(', ') || '–')}${kws.length > 8 ? ', …' : ''}) · `
+    + `${tasteKeywords.negativeGenres.length} Ausschlüsse (${escHtml(tasteKeywords.negativeGenres.map(p => p.genre).join(', ') || '–')})`;
+  return `
+    <div class="taste-explain">
+      <h4>🎯 Geschmacks-Match: ${score} Punkte — so kommt die Zahl zustande</h4>
+      ${rows || '<div style="color:var(--text-dim)">Keine Übereinstimmung: Kein Begriff aus deinem Profil kommt im Text dieses Films vor (Topic, Titel, Beschreibung, TMDB-Inhaltsangabe).</div>'}
+      <div class="te-profile">${profilInfo}</div>
+    </div>`;
+}
+
 function showDetail(idx) {
   const item = displayedResults[idx];
   if (!item) return;
@@ -1899,6 +1948,7 @@ function showDetail(idx) {
     </div>
     <div class="description">${escHtml(desc)}</div>
     ${mediathekDesc ? `<div style="font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.6;"><strong>Mediathek-Info:</strong> ${escHtml(mediathekDesc)}</div>` : ''}
+    ${renderTasteExplain(item)}
     <div class="actions">
       ${safeUrl(activeItem.url_website)
         ? `<a href="${escAttr(safeUrl(activeItem.url_website))}" target="_blank" rel="noopener" class="btn btn-primary">▶ In Mediathek streamen</a>` : ''}
