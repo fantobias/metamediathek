@@ -1118,6 +1118,58 @@ const TASTE_EXAMPLES = {
   action: 'Action, Thriller, Spannung! Schnelle Filme mit viel Tempo, Verfolgungsjagden, Agenten-Thriller, Heist-Movies. Gerne auch gute Kriegsfilme oder dystopische Sci-Fi.'
 };
 
+// ─── Wortstamm-Matching & Synonyme ───
+// Kappt gängige deutsche Endungen, damit "Krimis"≈"Krimi" und
+// "skandinavische"≈"Skandinavien" zusammenfinden
+function stemDE(w) {
+  let s = normDE((w || '').trim());
+  const endings = ['ischen', 'ische', 'isch', 'ungen', 'ung', 'innen', 'erin', 'en', 'er', 'es', 'e', 's', 'n'];
+  for (const e of endings) {
+    if (s.endsWith(e) && s.length - e.length >= 4) { s = s.slice(0, s.length - e.length); break; }
+  }
+  return s;
+}
+
+// Prüft, ob der Wortstamm eines Begriffs im (normalisierten) Text vorkommt
+function stemIncludes(text, term) {
+  const st = stemDE(term);
+  return st.length >= 3 && text.includes(st);
+}
+
+// Kuratierte Synonymgruppen für häufige Konzepte im Geschmacksprofil
+const SYNONYM_GROUPS = [
+  ['skandinavisch', 'skandinavien', 'dänisch', 'dänemark', 'schwedisch', 'schweden', 'norwegisch', 'norwegen', 'finnisch', 'finnland', 'island', 'nordisch', 'nordic', 'kopenhagen', 'oslo', 'stockholm'],
+  ['frankreich', 'französisch', 'paris', 'provence'],
+  ['italien', 'italienisch', 'sizilien', 'toskana', 'neapel'],
+  ['britisch', 'england', 'englisch', 'großbritannien', 'london', 'schottland', 'wales'],
+  ['spanien', 'spanisch', 'katalonien', 'andalusien'],
+  ['weltraum', 'astronaut', 'raumfahrt', 'kosmos', 'galaxie', 'universum'],
+  ['mittelalter', 'ritter', 'kreuzzug', 'wikinger'],
+  ['weltkrieg', 'nationalsozialismus', 'drittes reich', 'wehrmacht', 'holocaust', 'widerstand'],
+  ['ddr', 'stasi', 'ostdeutschland', 'wiedervereinigung', 'mauerfall'],
+  ['klima', 'klimawandel', 'umwelt', 'nachhaltigkeit', 'erderwärmung'],
+  ['künstliche intelligenz', 'roboter', 'algorithmus', 'digitalisierung'],
+  ['medizin', 'krankenhaus', 'klinik', 'ärztin', 'chirurg', 'pflege'],
+  ['kochen', 'kulinarisch', 'rezept', 'küchenchef', 'gastronomie'],
+  ['berge', 'alpen', 'gipfel', 'gebirge', 'klettern'],
+  ['meer', 'ozean', 'küste', 'unterwasser', 'tiefsee', 'segeln'],
+  ['true crime', 'wahre verbrechen', 'kriminalfall', 'justizirrtum']
+];
+
+// Themen-Wort-Abgleich: eigener Wortstamm ODER Synonym derselben Gruppe
+function keywordMatches(text, kw) {
+  const st = stemDE(kw);
+  if (st.length >= 4 && text.includes(st)) return { hit: true, via: null };
+  const group = SYNONYM_GROUPS.find(g => g.some(s => stemDE(s) === st));
+  if (group) {
+    for (const syn of group) {
+      const ss = stemDE(syn);
+      if (ss.length >= 3 && text.includes(ss)) return { hit: true, via: syn };
+    }
+  }
+  return { hit: false, via: null };
+}
+
 function setTasteExample(key) {
   document.getElementById('tasteProfile').value = TASTE_EXAMPLES[key] || '';
 }
@@ -1213,6 +1265,8 @@ function parseTasteProfile(text) {
     'sehr', 'viel', 'mehr', 'gut', 'gute', 'guten', 'guter', 'gutes',
     'am', 'an', 'auf', 'in', 'im', 'um', 'zu', 'so', 'als', 'es', 'ist',
     'sind', 'war', 'hat', 'haben', 'wird', 'mich', 'mir', 'mein', 'meine',
+    'kein', 'keine', 'keinen', 'keiner', 'nicht', 'ohne', 'lieber', 'eher',
+    'manchmal', 'immer', 'alles', 'etwas', 'dinge', 'gucke', 'wenig',
     'filme', 'film', 'serien', 'serie', 'sendung', 'sendungen', 'beiträge',
     'schaue', 'sehe', 'suche', 'interesse', 'interessiert', 'besonders',
     'liebe', 'bevorzuge', 'favoriten', 'empfehlung', 'empfehlungen',
@@ -1231,15 +1285,29 @@ function parseTasteProfile(text) {
     'mögen', 'bevorzugen', 'finden', 'finde', 'gefallen', 'gefällt',
   ]);
   const contentKeywords = [];
+  // Genre-Terme auch als Wortstamm ausschließen ("Krimis" soll nicht
+  // zusätzlich zum Genre-Signal "krimi" als Themen-Wort doppelt zählen)
+  const genreStems = new Set([...allGenreTerms].map(stemDE));
   // Split by common separators, extract words 4+ chars not in stopwords/genre/meta terms
   const words = lower.replace(/[,.\-;:!?()]/g, ' ').split(/\s+/);
   for (const word of words) {
     if (word.length < 4) continue;
     if (stopwords.has(word)) continue;
     if (metaWords.has(word)) continue;
-    if (allGenreTerms.has(word)) continue;
+    if (allGenreTerms.has(word) || genreStems.has(stemDE(word))) continue;
     if (negatives.some(n => n.includes(word))) continue;
     contentKeywords.push(word);
+  }
+
+  // Freie Ausschluss-Themen: Wörter hinter Negationen, die KEINE der
+  // fest verdrahteten Genre-Gruppen sind (z.B. "keine Gartensendungen")
+  const negativeKeywords = [];
+  for (const n of negatives) {
+    for (const w of n.split(/\s+/)) {
+      if (w.length >= 4 && !stopwords.has(w) && !negativeKeywords.includes(w)) {
+        negativeKeywords.push(w);
+      }
+    }
   }
 
   // Also extract 2-word topic phrases for better precision matching
@@ -1249,7 +1317,7 @@ function parseTasteProfile(text) {
     contentPhrases.push(contentKeywords[i] + ' ' + contentKeywords[i + 1]);
   }
 
-  return { positives, negativeGenres, contentKeywords, contentPhrases, rawText: lower };
+  return { positives, negativeGenres, contentKeywords, contentPhrases, negativeKeywords, rawText: lower };
 }
 
 // Bewertet einen Film gegen das Geschmacksprofil.
@@ -1257,7 +1325,9 @@ function parseTasteProfile(text) {
 // zurückgegeben ({ score, reasons }) — für die Warum-Anzeige im Modal.
 function scoreTaste(item, tmdb, profile, explain = false) {
   if (!profile) return explain ? { score: 0, reasons: [] } : 0;
-  const text = normDE(`${item.topic} ${item.title} ${item.description || ''} ${tmdb?.overview || ''}`);
+  // _senderDesc: og:description der Senderseite — zusätzliches Matching-Futter,
+  // wenn TMDB keine Inhaltsangabe liefert
+  const text = normDE(`${item.topic} ${item.title} ${item.description || ''} ${item._senderDesc || ''} ${tmdb?.overview || ''}`);
   const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids).map(g => normDE(g)) : [];
   let score = 0;
   const reasons = explain ? [] : null;
@@ -1277,10 +1347,11 @@ function scoreTaste(item, tmdb, profile, explain = false) {
   if (totalTopicKeywords > 0) {
     let keywordHits = 0;
     for (const kw of profile.contentKeywords) {
-      if (text.includes(kw)) {
+      const m = keywordMatches(text, kw);
+      if (m.hit) {
         keywordHits++;
         score += 3;
-        if (reasons) reasons.push({ pts: 3, text: `Themen-Wort "${kw}" kommt im Filmtext vor` });
+        if (reasons) reasons.push({ pts: 3, text: `Themen-Wort "${kw}"${m.via ? ` (über Synonym "${m.via}")` : ''} passt zum Filmtext` });
       }
     }
     if (totalTopicKeywords >= 2) {
@@ -1300,20 +1371,25 @@ function scoreTaste(item, tmdb, profile, explain = false) {
   }
 
   // 3) Genre signal matches (LOW weight — broad category fit)
+  // Pro Signal maximal EINMAL Punkte (Text ODER TMDB-Genre) — vorher zählten
+  // beide, was Filme mit TMDB-Eintrag systematisch bevorzugte
   for (const sig of profile.positives) {
+    let matchedInText = false;
     for (const term of sig.terms) {
-      if (text.includes(term)) {
+      if (stemIncludes(text, term)) {
         score += sig.weight;
         if (reasons) reasons.push({ pts: sig.weight, text: `Genre-Signal "${sig.genre}": Begriff "${term}" im Filmtext` });
+        matchedInText = true;
         break;
       }
     }
-    // Also check TMDB genres
-    for (const tg of tmdbGenres) {
-      if (sig.terms.some(t => tg.includes(t) || t.includes(tg))) {
-        score += sig.weight;
-        if (reasons) reasons.push({ pts: sig.weight, text: `Genre-Signal "${sig.genre}": passt zum TMDB-Genre "${tg}"` });
-        break;
+    if (!matchedInText) {
+      for (const tg of tmdbGenres) {
+        if (sig.terms.some(t => tg.includes(t) || t.includes(tg))) {
+          score += sig.weight;
+          if (reasons) reasons.push({ pts: sig.weight, text: `Genre-Signal "${sig.genre}": passt zum TMDB-Genre "${tg}"` });
+          break;
+        }
       }
     }
   }
@@ -1321,11 +1397,20 @@ function scoreTaste(item, tmdb, profile, explain = false) {
   // 4) Negative matches (penalty)
   for (const sig of profile.negativeGenres) {
     for (const term of sig.terms) {
-      if (text.includes(term)) {
+      if (stemIncludes(text, term)) {
         score -= sig.weight * 2;
         if (reasons) reasons.push({ pts: -sig.weight * 2, text: `Ausschluss "${sig.genre}": Begriff "${term}" im Filmtext` });
         break;
       }
+    }
+  }
+
+  // 4b) Freie Ausschluss-Themen (z.B. "keine Gartensendungen")
+  for (const nk of (profile.negativeKeywords || [])) {
+    const m = keywordMatches(text, nk);
+    if (m.hit) {
+      score -= 6;
+      if (reasons) reasons.push({ pts: -6, text: `Ausschluss-Thema "${nk}"${m.via ? ` (über Synonym "${m.via}")` : ''} passt zum Filmtext` });
     }
   }
 
@@ -1727,6 +1812,13 @@ async function enrichWithTMDB_background(results) {
       const tmdb = await tmdbSearch(item.title, item.topic);
       if (ctrl.cancelled) return;
       item._tmdb = tmdb;
+      // Senderbeschreibung (og:description) nachladen, wenn TMDB keine
+      // Inhaltsangabe liefert — mehr Text für Anzeige und Taste-Matching
+      if (API_MODE && !(tmdb && tmdb.overview) && item._senderDesc === undefined && safeUrl(item.url_website)) {
+        const meta = await fetchJsonSafe('/api/meta?url=' + encodeURIComponent(safeUrl(item.url_website)));
+        if (ctrl.cancelled) return;
+        item._senderDesc = (meta && typeof meta.description === 'string') ? meta.description : null;
+      }
       item._tasteScore = scoreTaste(item, tmdb, tasteKeywords);
       done++;
     });
@@ -1776,7 +1868,7 @@ function renderCard(item, idx) {
   const rating = tmdb ? fmtRating(tmdb.rating) : null;
   const tasteScore = item._tasteScore || 0;
   const match = tasteKeywords ? matchLabel(tasteScore) : null;
-  const desc = (tmdb && tmdb.overview) ? tmdb.overview : (item.description || 'Keine Beschreibung verfügbar.');
+  const desc = (tmdb && tmdb.overview) ? tmdb.overview : (item.description || item._senderDesc || 'Keine Beschreibung verfügbar.');
   // Links zeigen auf die gewählte Fassung der Gruppe
   const activeItem = getActiveVariantItem(item);
   const urlWebsite = safeUrl(activeItem.url_website);
@@ -1878,10 +1970,12 @@ function renderTasteExplain(item) {
       <span>${escHtml(r.text)}</span>
     </div>`).join('');
   const kws = tasteKeywords.contentKeywords || [];
+  const negKws = tasteKeywords.negativeKeywords || [];
   const profilInfo = `Dein Profil, so wie die App es versteht: `
     + `${tasteKeywords.positives.length} Genre-Signale (${escHtml(tasteKeywords.positives.map(p => p.genre).join(', ') || '–')}) · `
     + `${kws.length} Themen-Wörter (${escHtml(kws.slice(0, 8).join(', ') || '–')}${kws.length > 8 ? ', …' : ''}) · `
-    + `${tasteKeywords.negativeGenres.length} Ausschlüsse (${escHtml(tasteKeywords.negativeGenres.map(p => p.genre).join(', ') || '–')})`;
+    + `${tasteKeywords.negativeGenres.length} Genre-Ausschlüsse (${escHtml(tasteKeywords.negativeGenres.map(p => p.genre).join(', ') || '–')}) · `
+    + `${negKws.length} Ausschluss-Themen (${escHtml(negKws.slice(0, 5).join(', ') || '–')})`;
   return `
     <div class="taste-explain">
       <h4>🎯 Geschmacks-Match: ${score} Punkte — so kommt die Zahl zustande</h4>
@@ -1901,7 +1995,7 @@ function showDetail(idx) {
   const rating = tmdb ? fmtRating(tmdb.rating) : null;
   const tasteScore = item._tasteScore || 0;
   const match = tasteKeywords ? matchLabel(tasteScore) : null;
-  const desc = (tmdb && tmdb.overview) || item.description || 'Keine Beschreibung verfügbar.';
+  const desc = (tmdb && tmdb.overview) || item.description || item._senderDesc || 'Keine Beschreibung verfügbar.';
   const mediathekDesc = item.description && tmdb?.overview && item.description !== tmdb.overview
     ? item.description : '';
 
@@ -1999,7 +2093,7 @@ function applySortAndFilter() {
   // Client-side text filter (for quick-chips and re-filtering without API call)
   if (searchText) {
     filtered = filtered.filter(r => {
-      const haystack = normDE(`${r.channel} ${r.topic} ${r.title} ${r.description || ''} ${r._tmdb?.overview || ''}`);
+      const haystack = normDE(`${r.channel} ${r.topic} ${r.title} ${r.description || ''} ${r._senderDesc || ''} ${r._tmdb?.overview || ''}`);
       const words = normDE(searchText).split(/\s+/);
       return words.every(w => haystack.includes(w));
     });
