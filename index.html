@@ -760,6 +760,12 @@
 </div>
 
 <script>
+// Alt-URL (GitHub Pages): dauerhaft zur Haupt-Adresse umleiten — nur dort
+// gibt es die Server-Endpunkte (Sendungsbilder, TMDB-Proxy, CORS-Proxy)
+if (location.hostname.endsWith('github.io')) {
+  location.replace('https://metamediathek.pages.dev/' + location.search);
+}
+
 // ─── Config ───
 const MEDIATHEK_API = 'https://mediathekviewweb.de/api/query';
 
@@ -793,6 +799,7 @@ const EXPIRY_WARN_DAYS = 183;         // ab ~6 Monaten nach Veröffentlichung "M
 const EXPIRY_OFFLINE_DAYS = 365;      // ab hier "Wahrscheinlich offline"
 const QUERY_CACHE_MAX = 20;           // gecachte Mediathek-Antworten (LRU)
 const TASTE_MIN_SCORE = 3;            // Geschmacks-Ansicht: mind. "leicht passend" (Punkte-Label-Schwelle)
+const TASTE_MIN_DURATION = 1200;      // Geschmacks-Ansicht: nur Inhalte ab 20 Min. (filtert News-Schnipsel)
 const QUERY_CACHE_TTL_MS = 10 * 60 * 1000;
 
 // ─── State ───
@@ -999,10 +1006,18 @@ function isGenericTopic(topic) {
   // Generic category names (not specific series/show names)
   const generic = /^(spielfilm|film|kino|fernsehfilm|krimi|drama|thriller|komödie|dokumentation|doku|reportage|serie|serien|magazin|nachrichten|talk|show|unterhaltung|sport|wissen|kultur|ratgeber|reise|gesellschaft|politik|wirtschaft|comedy|kabarett|musik|konzert|oper|theater|kinderprogramm|kinderfilm|spielfilm.highlight|kino\s*[-–]?\s*filme?|filme?\s*im\s*ersten|der\s*fernsehfilm|fernsehfilm\s*der\s*woche|filmmi?ttwoch|freitagsfilm|montagskino|sommerKino|telefilm|dokus?\s*[&+]\s*reportagen|history|wissensmagazin)/i;
   if (generic.test(cleaned)) return true;
-  // Known news/magazine/talk shows — they report ON films, their episode titles are not series episodes
-  const newsShows = /^(heute\s*journal|heute\s*show|heute|tagesschau|tagesthemen|tagesschau24|zdf\s*heute|morgenmagazin|moma|mittagsmagazin|nachtmagazin|bericht\s*aus\s*berlin|berlin\s*direkt|frontal|monitor|panorama|fakt|report|plusminus|markt|mex|exact|brisant|leute|ndr\s*talk|3\s*nach\s*9|markus\s*lanz|maischberger|hart\s*aber\s*fair|anne\s*will|sandra\s*maischberger|caren\s*miosga|stern\s*tv|spiegel\s*tv|extra\s*3|die\s*anstalt|neo\s*magazin|zdf\s*magazin|aspekte|kulturzeit|titel\s*thesen\s*temperamente|ttt|druckfrisch|das\s*literarische\s*quartett|kunscht|capriccio|kinokino|close\s*up|filmtipp|filmgorillas|leschs?\s*kosmos|quarks|galileo|wiso|volle\s*kanne|mdr\s*aktuell|ndr\s*info|rbb24|sr\s*aktuell|event\s*mix\s*der\s*woche)/i;
-  if (newsShows.test(cleaned)) return true;
+  if (isNewsMagazineTopic(topic)) return true;
   return false;
+}
+
+// Known news/magazine/talk shows — they report ON films/topics; their episodes
+// are no series episodes. Wird auch von der Geschmacks-Ansicht genutzt,
+// um Tagesnachrichten aus dem Profil-Ranking herauszuhalten.
+function isNewsMagazineTopic(topic) {
+  if (!topic) return false;
+  const cleaned = topic.replace(/[-–:]/g, ' ').trim();
+  const newsShows = /^(heute\s*journal|heute\s*show|heute|tagesschau|tagesthemen|tagesschau24|zdf\s*heute|zib\s*\d?|zeit\s*im\s*bild|morgenmagazin|moma|mittagsmagazin|nachtmagazin|bericht\s*aus\s*berlin|berlin\s*direkt|frontal|monitor|panorama|fakt|report|plusminus|markt|mex|exact|brisant|leute|landesschau|abendschau|aktuelle\s*stunde|hessenschau|rundschau|nordmagazin|buten\s*un\s*binnen|ndr\s*talk|3\s*nach\s*9|markus\s*lanz|maischberger|hart\s*aber\s*fair|anne\s*will|sandra\s*maischberger|caren\s*miosga|stern\s*tv|spiegel\s*tv|extra\s*3|die\s*anstalt|neo\s*magazin|zdf\s*magazin|aspekte|kulturzeit|titel\s*thesen\s*temperamente|ttt|druckfrisch|das\s*literarische\s*quartett|kunscht|capriccio|kinokino|close\s*up|filmtipp|filmgorillas|leschs?\s*kosmos|quarks|galileo|wiso|volle\s*kanne|mdr\s*aktuell|ndr\s*info|rbb24|sr\s*aktuell|politik|nachrichten|event\s*mix\s*der\s*woche)/i;
+  return newsShows.test(cleaned);
 }
 
 // Wrapper: dedupliziert identische, gleichzeitig laufende TMDB-Suchen.
@@ -1883,7 +1898,7 @@ function renderCard(item, idx) {
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
             : renderPosterPlaceholder(item, genres, chClass) + (API_MODE && urlWebsite
-              ? `<img class="og-poster" src="/api/ogimage?url=${encodeURIComponent(urlWebsite)}" alt="" loading="lazy" onerror="this.remove()">`
+              ? `<img class="og-poster" src="/api/ogimage?url=${encodeURIComponent(urlWebsite)}" alt="" onerror="this.remove()">`
               : '')}
         </div>
         <div class="card-body">
@@ -2114,7 +2129,13 @@ function applySortAndFilter() {
   // eine lange Liste völlig unpassender Einträge. Sortierung wechseln
   // (z.B. "Neueste zuerst") zeigt wieder alles.
   if (tasteKeywords && sortVal === 'taste_desc') {
-    filtered = filtered.filter(r => (r._tasteScore || 0) >= TASTE_MIN_SCORE);
+    filtered = filtered.filter(r =>
+      (r._tasteScore || 0) >= TASTE_MIN_SCORE
+      // Nur substanzielle Inhalte: keine News-Schnipsel und Magazin-Formate —
+      // dort dominieren Tagesmeldungen das Profil-Ranking
+      && (r.duration || 0) >= TASTE_MIN_DURATION
+      && !isNewsMagazineTopic(r.topic)
+    );
   }
 
   // Client-side sort for rating and taste
