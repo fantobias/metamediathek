@@ -66,7 +66,13 @@ export async function onRequestPost(context) {
   for (const model of MODELS) {
     try {
       const result = await env.AI.run(model, payload);
-      raw = (result && (result.response || result.result || '')) + '';
+      let out = result;
+      if (out && typeof out === 'object') {
+        if (out.response !== undefined) out = out.response;
+        else if (out.result !== undefined) out = out.result;
+        else if (out.choices && out.choices[0]) out = out.choices[0].message ? out.choices[0].message.content : out.choices[0].text;
+      }
+      raw = (out && typeof out === 'object') ? JSON.stringify(out) : String(out == null ? '' : out);
       if (raw.trim()) break;
       errors.push(model + ': leere Antwort');
     } catch (e) {
@@ -78,7 +84,7 @@ export async function onRequestPost(context) {
   }
 
   const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return jsonResponse({ error: 'Keine JSON-Antwort' }, 502);
+  if (!m) return jsonResponse({ error: 'Keine JSON-Antwort', raw: raw.slice(0, 300) }, 502);
   let parsed;
   try { parsed = JSON.parse(m[0]); } catch (e) { return jsonResponse({ error: 'JSON nicht parsebar' }, 502); }
 
