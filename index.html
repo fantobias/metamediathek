@@ -44,7 +44,10 @@
   .logo {
     display: flex; align-items: center; gap: 12px;
     font-size: 24px; font-weight: 700;
+    cursor: pointer; /* Logo-Klick = zurück zur Startansicht */
   }
+  .logo:hover span { color: var(--accent-hover); }
+  .logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
   .logo-icon { font-size: 28px; }
   .logo span { color: var(--accent); }
   .header-right { display: flex; align-items: center; gap: 16px; }
@@ -276,7 +279,7 @@
   }
   .match-high { background: #0d3320; color: var(--green); }
   .match-med { background: #332d0d; color: var(--orange); }
-  .match-low { background: var(--tag-bg); color: var(--text-dim); }
+  .match-low { background: var(--tag-bg); color: #aeb6c2; border: 1px solid var(--border); }
 
   /* Channel colors */
   .ch-ard { background: #1a3a5c; color: #5ba3e6; }
@@ -534,7 +537,7 @@
 
 <div class="header">
   <div class="header-top">
-    <div class="logo">
+    <div class="logo" role="button" tabindex="0" title="Zur Startansicht" onclick="goHome()" onkeydown="if(event.key==='Enter')goHome()">
       <span class="logo-icon">📺</span>
       <div>Meta<span>Mediathek</span></div>
     </div>
@@ -1200,6 +1203,34 @@ function toggleTastePanel() {
   toggle.classList.toggle('active');
 }
 
+// Genre-Signalgruppen (modulweit — auch fürs Mapping der KI-Genres genutzt)
+const TASTE_GENRE_SIGNALS = [
+  { terms: ['krimi', 'mord', 'ermittl', 'kommissar', 'tatort', 'polizeiruf', 'detektiv', 'verbrechen'], genre: 'krimi', weight: 2 },
+  { terms: ['thriller', 'spannung', 'spannend', 'psycho', 'nervenaufreibend'], genre: 'thriller', weight: 2 },
+  { terms: ['drama', 'dramatisch', 'tragödie', 'schicksal', 'gesellschaftskritik', 'sozialdrama'], genre: 'drama', weight: 2 },
+  { terms: ['komödie', 'comedy', 'lustig', 'humor', 'witzig', 'lachen', 'spaß'], genre: 'komödie', weight: 2 },
+  { terms: ['doku', 'dokumentation', 'dokumentarfilm', 'reportage', 'investigativ'], genre: 'doku', weight: 2 },
+  { terms: ['natur', 'tier', 'wildnis', 'ozean', 'umwelt', 'klima', 'planet'], genre: 'natur', weight: 2 },
+  { terms: ['geschichte', 'historisch', 'zeitgeschichte'], genre: 'geschichte', weight: 2 },
+  { terms: ['science fiction', 'sci-fi', 'zukunft', 'dystop', 'weltraum'], genre: 'scifi', weight: 2 },
+  { terms: ['liebe', 'romantik', 'romanze', 'romantisch', 'liebesfilm'], genre: 'romantik', weight: 2 },
+  { terms: ['abenteuer', 'expedition', 'entdeckung'], genre: 'abenteuer', weight: 2 },
+  { terms: ['horror', 'grusel', 'unheimlich', 'angst'], genre: 'horror', weight: 2 },
+  { terms: ['familie', 'kinder', 'kinderfilm', 'familienfilm', 'märchen'], genre: 'familie', weight: 2 },
+  { terms: ['action', 'verfolgung', 'explosion', 'kampf', 'agent'], genre: 'action', weight: 2 },
+  { terms: ['heimat', 'alpen', 'berg', 'ländlich', 'dorf'], genre: 'heimat', weight: 1 },
+  { terms: ['musik', 'konzert', 'oper', 'musical'], genre: 'musik', weight: 1 },
+  { terms: ['politik', 'politisch', 'intrigen', 'macht', 'korruption'], genre: 'politik', weight: 2 },
+  { terms: ['kunst', 'arthouse', 'autorenfilm', 'experimentell', 'avantgarde'], genre: 'arthouse', weight: 2 },
+  { terms: ['wissenschaft', 'forschung', 'technik', 'technologie'], genre: 'wissenschaft', weight: 2 },
+  { terms: ['true crime', 'wahre begebenheit', 'tatsächlich', 'real'], genre: 'truecrime', weight: 2 },
+  { terms: ['skandinavisch', 'nordic noir', 'nordisch', 'schwedisch', 'dänisch'], genre: 'nordic', weight: 2 },
+  { terms: ['europäisch', 'französisch', 'arte', 'anspruchsvoll'], genre: 'euro', weight: 1 },
+  { terms: ['krieg', 'kriegsfilm', 'soldat', 'militär', 'schlacht'], genre: 'kriegsfilm', weight: 2 },
+  { terms: ['western'], genre: 'western', weight: 1 },
+  { terms: ['animation', 'animationsfilm', 'zeichentrick', 'anime'], genre: 'animation', weight: 2 },
+];
+
 function parseTasteProfile(text) {
   if (!text || !text.trim()) return null;
   const lower = normDE(text);
@@ -1212,33 +1243,7 @@ function parseTasteProfile(text) {
     negatives.push(m[1].trim());
   }
 
-  // Genre signal groups (broad categories)
-  const genreSignals = [
-    { terms: ['krimi', 'mord', 'ermittl', 'kommissar', 'tatort', 'polizeiruf', 'detektiv', 'verbrechen'], genre: 'krimi', weight: 2 },
-    { terms: ['thriller', 'spannung', 'spannend', 'psycho', 'nervenaufreibend'], genre: 'thriller', weight: 2 },
-    { terms: ['drama', 'dramatisch', 'tragödie', 'schicksal', 'gesellschaftskritik', 'sozialdrama'], genre: 'drama', weight: 2 },
-    { terms: ['komödie', 'comedy', 'lustig', 'humor', 'witzig', 'lachen', 'spaß'], genre: 'komödie', weight: 2 },
-    { terms: ['doku', 'dokumentation', 'dokumentarfilm', 'reportage', 'investigativ'], genre: 'doku', weight: 2 },
-    { terms: ['natur', 'tier', 'wildnis', 'ozean', 'umwelt', 'klima', 'planet'], genre: 'natur', weight: 2 },
-    { terms: ['geschichte', 'historisch', 'zeitgeschichte'], genre: 'geschichte', weight: 2 },
-    { terms: ['science fiction', 'sci-fi', 'zukunft', 'dystop', 'weltraum'], genre: 'scifi', weight: 2 },
-    { terms: ['liebe', 'romantik', 'romanze', 'romantisch', 'liebesfilm'], genre: 'romantik', weight: 2 },
-    { terms: ['abenteuer', 'expedition', 'entdeckung'], genre: 'abenteuer', weight: 2 },
-    { terms: ['horror', 'grusel', 'unheimlich', 'angst'], genre: 'horror', weight: 2 },
-    { terms: ['familie', 'kinder', 'kinderfilm', 'familienfilm', 'märchen'], genre: 'familie', weight: 2 },
-    { terms: ['action', 'verfolgung', 'explosion', 'kampf', 'agent'], genre: 'action', weight: 2 },
-    { terms: ['heimat', 'alpen', 'berg', 'ländlich', 'dorf'], genre: 'heimat', weight: 1 },
-    { terms: ['musik', 'konzert', 'oper', 'musical'], genre: 'musik', weight: 1 },
-    { terms: ['politik', 'politisch', 'intrigen', 'macht', 'korruption'], genre: 'politik', weight: 2 },
-    { terms: ['kunst', 'arthouse', 'autorenfilm', 'experimentell', 'avantgarde'], genre: 'arthouse', weight: 2 },
-    { terms: ['wissenschaft', 'forschung', 'technik', 'technologie'], genre: 'wissenschaft', weight: 2 },
-    { terms: ['true crime', 'wahre begebenheit', 'tatsächlich', 'real'], genre: 'truecrime', weight: 2 },
-    { terms: ['skandinavisch', 'nordic noir', 'nordisch', 'schwedisch', 'dänisch'], genre: 'nordic', weight: 2 },
-    { terms: ['europäisch', 'französisch', 'arte', 'anspruchsvoll'], genre: 'euro', weight: 1 },
-    { terms: ['krieg', 'kriegsfilm', 'soldat', 'militär', 'schlacht'], genre: 'kriegsfilm', weight: 2 },
-    { terms: ['western'], genre: 'western', weight: 1 },
-    { terms: ['animation', 'animationsfilm', 'zeichentrick', 'anime'], genre: 'animation', weight: 2 },
-  ];
+  const genreSignals = TASTE_GENRE_SIGNALS;
 
   const positives = [];
   const negativeGenres = [];
@@ -1433,28 +1438,149 @@ function scoreTaste(item, tmdb, profile, explain = false) {
   return explain ? { score, reasons } : score;
 }
 
-function applyTasteProfile() {
-  const text = document.getElementById('tasteProfile').value;
-  tasteKeywords = parseTasteProfile(text);
-  if (tasteKeywords) {
-    const kwCount = tasteKeywords.contentKeywords ? tasteKeywords.contentKeywords.length : 0;
-    document.getElementById('tasteStatus').textContent =
-      `✓ Profil aktiv (${tasteKeywords.positives.length} Genres, ${kwCount} Themen-Keywords, ${tasteKeywords.negativeGenres.length} Ausschlüsse)`;
-    // Save to localStorage
-    try { localStorage.setItem('metaMediathek_taste', text); } catch(e) {}
-
-    // Close the panel
-    document.getElementById('tastePanel').classList.remove('active');
-    document.getElementById('profileToggle').classList.add('active');
-
-    // Auto-switch sort to taste match
-    document.getElementById('filterSort').value = 'taste_desc';
-
-    // Re-score and re-render
-    rescoreAndRender();
-  } else {
-    document.getElementById('tasteStatus').textContent = '⚠ Bitte beschreibe deinen Filmgeschmack.';
+// KI-Interpretation des Profils abrufen (Workers AI hinter /api/profil).
+// Liefert { suchbegriffe, genres, ausschluesse } oder null (dann lokaler Fallback).
+async function fetchProfilInterpretation(text) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch('/api/profil', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }), signal: ctrl.signal
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data && Array.isArray(data.suchbegriffe) && data.suchbegriffe.length > 0) ? data : null;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+// Lokales Parsing + optionale KI-Erweiterung zu einem Profil zusammenführen
+function buildTasteProfile(text, aiProfile) {
+  const p = parseTasteProfile(text);
+  if (!p) return p;
+  p.searchTerms = null;
+  if (aiProfile) {
+    const clean = arr => (Array.isArray(arr) ? arr : [])
+      .map(s => String(s).trim())
+      .filter(s => s.length >= 3 && s.length <= 40)
+      .slice(0, 15);
+    const begriffe = clean(aiProfile.suchbegriffe);
+    const ausschluesse = clean(aiProfile.ausschluesse);
+    const genres = clean(aiProfile.genres).map(g => normDE(g));
+    p.searchTerms = begriffe; // für die aktive Beschaffung aus dem Gesamtbestand
+    for (const b of begriffe) {
+      const w = normDE(b);
+      if (!p.contentKeywords.includes(w)) p.contentKeywords.push(w);
+    }
+    for (const a of ausschluesse) {
+      const w = normDE(a);
+      if (!p.negativeKeywords.includes(w)) p.negativeKeywords.push(w);
+    }
+    for (const g of genres) {
+      const sig = TASTE_GENRE_SIGNALS.find(s => s.genre === g);
+      if (sig && !p.positives.includes(sig)) p.positives.push(sig);
+    }
+    p.aiExpanded = true;
+  }
+  return p;
+}
+
+async function applyTasteProfile() {
+  const text = document.getElementById('tasteProfile').value;
+  const statusEl = document.getElementById('tasteStatus');
+  if (!text || !text.trim()) {
+    statusEl.textContent = '⚠ Bitte beschreibe deinen Filmgeschmack.';
+    return;
+  }
+
+  // Im API-Modus: Freitext einmalig per KI in Begriffe/Genres/Ausschlüsse übersetzen
+  let aiProfile = null;
+  if (API_MODE) {
+    statusEl.textContent = '🤖 Profil wird interpretiert…';
+    aiProfile = await fetchProfilInterpretation(text);
+  }
+  tasteKeywords = buildTasteProfile(text, aiProfile);
+
+  const kwCount = tasteKeywords.contentKeywords ? tasteKeywords.contentKeywords.length : 0;
+  const exCount = (tasteKeywords.negativeKeywords || []).length + tasteKeywords.negativeGenres.length;
+  statusEl.textContent = `✓ Profil aktiv${aiProfile ? ' · KI-erweitert' : ''} (${tasteKeywords.positives.length} Genres, ${kwCount} Begriffe, ${exCount} Ausschlüsse)`;
+  try {
+    localStorage.setItem('metaMediathek_taste', text);
+    localStorage.setItem('metaMediathek_tasteAI', aiProfile ? JSON.stringify(aiProfile) : '');
+  } catch(e) {}
+
+  document.getElementById('tastePanel').classList.remove('active');
+  document.getElementById('profileToggle').classList.add('active');
+  document.getElementById('filterSort').value = 'taste_desc';
+
+  if (API_MODE && tasteKeywords.searchTerms && tasteKeywords.searchTerms.length > 0) {
+    // Empfehlungs-Feed: aktiv im Gesamtbestand suchen statt nur die
+    // bereits geladenen Ergebnisse umzusortieren
+    profileFeedSearch();
+  } else {
+    rescoreAndRender();
+  }
+}
+
+// Aktive Beschaffung: für jeden (KI-erweiterten) Begriff eine eigene
+// Bestandssuche, Ergebnisse zusammenführen, deduplizieren, bewerten
+async function profileFeedSearch() {
+  const seq = ++searchSeq;
+  document.getElementById('searchInput').value = '';
+  activeQuickFilter = '';
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  showLoading('Empfehlungen aus dem Gesamtbestand zusammenstellen…');
+  syncStateToURL();
+
+  const terms = tasteKeywords.searchTerms.slice(0, 12);
+  const seen = new Set();
+  const merged = [];
+  const statusEl = document.getElementById('loadingSub');
+
+  for (let i = 0; i < terms.length; i += PERSON_BATCH_SIZE) {
+    if (seq !== searchSeq) return;
+    const batch = terms.slice(i, i + PERSON_BATCH_SIZE);
+    await Promise.all(batch.map(async (term) => {
+      const payload = {
+        queries: [{ fields: ['title', 'topic'], query: term }],
+        sortBy: 'timestamp', sortOrder: 'desc',
+        future: false, offset: 0, size: 40
+      };
+      const data = await fetchMediathek(payload);
+      if (seq !== searchSeq) return;
+      for (const r of (data?.result?.results || [])) {
+        const key = getItemKey(r);
+        if (!seen.has(key)) { seen.add(key); merged.push(r); }
+      }
+    }));
+    statusEl.textContent = `${Math.min(i + PERSON_BATCH_SIZE, terms.length)}/${terms.length} Begriffe durchsucht, ${merged.length} Kandidaten…`;
+  }
+  if (seq !== searchSeq) return;
+
+  document.getElementById('loadingState').style.display = 'none';
+  for (const item of merged) {
+    if (!item._tasteScore) item._tasteScore = scoreTaste(item, null, tasteKeywords);
+  }
+  totalResults = merged.length;
+  document.getElementById('resultCountTotal').textContent = totalResults.toLocaleString('de-DE');
+
+  if (merged.length === 0) {
+    enrichedResults = [];
+    displayedResults = [];
+    showEmpty('Zu deinem Profil wurde aktuell nichts im Bestand gefunden. Formuliere das Profil breiter oder versuche es später erneut.');
+    updatePagination();
+    return;
+  }
+
+  enrichedResults = groupVariants(merged);
+  applySortAndFilter();
+  updatePagination();
+  AppEvents.emit('search:completed', { total: totalResults, shown: enrichedResults.length });
+  enrichWithTMDB_background(enrichedResults);
 }
 
 function clearTasteProfile() {
@@ -1462,7 +1588,10 @@ function clearTasteProfile() {
   tasteKeywords = null;
   document.getElementById('tasteStatus').textContent = '';
   document.getElementById('profileToggle').classList.remove('active');
-  try { localStorage.removeItem('metaMediathek_taste'); } catch(e) {}
+  try {
+    localStorage.removeItem('metaMediathek_taste');
+    localStorage.removeItem('metaMediathek_tasteAI');
+  } catch(e) {}
   // Reset sort if it was on taste
   if (document.getElementById('filterSort').value === 'taste_desc') {
     document.getElementById('filterSort').value = 'timestamp_desc';
@@ -1660,7 +1789,7 @@ function ratingColor(r) {
 function matchLabel(score) {
   if (score >= 12) return { text: `🎯 ${score}P – Top Match`, cls: 'match-high' };
   if (score >= 6) return { text: `🎯 ${score}P – Passt gut`, cls: 'match-med' };
-  if (score >= 3) return { text: `${score}P`, cls: 'match-low' };
+  if (score >= 3) return { text: `🎯 ${score}P`, cls: 'match-low' };
   return null;
 }
 
@@ -2349,6 +2478,21 @@ function quickSearch(term) {
   doSearch(true, true);  // keepChips=true so our active chip stays highlighted
 }
 
+// Logo-Klick: zurück zur frischen Startansicht (Konvention: Logo = Home).
+// Einstellungen (Geschmacksprofil, Merkliste) bleiben erhalten — nur der
+// Suchzustand wird zurückgesetzt.
+function goHome() {
+  document.getElementById('modal').classList.remove('active');
+  document.getElementById('tastePanel').classList.remove('active');
+  document.getElementById('watchlistPanel').classList.remove('active');
+  document.getElementById('watchlistToggle').classList.remove('active');
+  closeBookmarkDropdown();
+  resetAll(); // Filter auf Defaults, Suche leeren, Startsuche laden
+  // Profil-Button-Zustand spiegelt weiterhin das gespeicherte Profil
+  document.getElementById('profileToggle').classList.toggle('active', !!tasteKeywords);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function resetAll() {
   document.getElementById('searchInput').value = '';
   document.getElementById('filterChannel').value = '';
@@ -2881,7 +3025,9 @@ try {
   const saved = localStorage.getItem('metaMediathek_taste');
   if (typeof saved === 'string' && saved.trim()) {
     document.getElementById('tasteProfile').value = saved;
-    tasteKeywords = parseTasteProfile(saved);
+    let savedAI = null;
+    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI') || 'null'); } catch(e) {}
+    tasteKeywords = buildTasteProfile(saved, savedAI);
     if (tasteKeywords) {
       document.getElementById('tasteStatus').textContent =
         `✓ Profil aktiv (${tasteKeywords.positives.length} Vorlieben, ${tasteKeywords.negativeGenres.length} Ausschlüsse)`;
