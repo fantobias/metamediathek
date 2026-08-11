@@ -45,19 +45,36 @@ export async function onRequestPost(context) {
     + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. '
     + 'ausschluesse: Themen/Begriffe, die der Nutzer ausdruecklich NICHT will (leer, wenn keine genannt).';
 
+  // Modell-Fallback-Kette: Namen aendern sich bei Cloudflare gelegentlich.
+  const MODELS = [
+    '@cf/meta/llama-3.1-8b-instruct',
+    '@cf/meta/llama-3.1-8b-instruct-fast',
+    '@cf/meta/llama-3.1-8b-instruct-awq',
+    '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    '@cf/meta/llama-3-8b-instruct'
+  ];
+  const payload = {
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: 'Geschmacksbeschreibung: """' + text + '"""' }
+    ],
+    max_tokens: 500,
+    temperature: 0.2
+  };
   let raw = '';
-  try {
-    const result = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', { 
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: 'Geschmacksbeschreibung: """' + text + '"""' }
-      ],
-      max_tokens: 500,
-      temperature: 0.2
-    });
-    raw = (result && (result.response || result.result || '')) + '';
-  } catch (e) {
-    return jsonResponse({ error: 'KI-Aufruf fehlgeschlagen' }, 502);
+  const errors = [];
+  for (const model of MODELS) {
+    try {
+      const result = await env.AI.run(model, payload);
+      raw = (result && (result.response || result.result || '')) + '';
+      if (raw.trim()) break;
+      errors.push(model + ': leere Antwort');
+    } catch (e) {
+      errors.push(model + ': ' + String(e && e.message || e).slice(0, 160));
+    }
+  }
+  if (!raw.trim()) {
+    return jsonResponse({ error: 'KI-Aufruf fehlgeschlagen', details: errors }, 502);
   }
 
   const m = raw.match(/\{[\s\S]*\}/);
@@ -72,4 +89,3 @@ export async function onRequestPost(context) {
     ausschluesse: cleanList(parsed.ausschluesse, 8)
   });
 }
-
