@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta name="mm-build" content="test-instrumented-2026-08-13">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -3044,6 +3045,207 @@ restoreStateFromURL();
 
 // Initial load
 doSearch();
+</script>
+
+<!-- ===================== MetaMediathek Telemetrie & Feedback (test-Branch) ===================== -->
+<!-- Selbstständiges Modul, keine Eingriffe in den App-Code. Sendet anonyme Nutzungs-Events,      -->
+<!-- automatische Fehlerberichte und manuelles Feedback an /api/feedback. Keine IPs, kein          -->
+<!-- Fingerprinting — nur eine zufällige Session-ID im sessionStorage.                             -->
+<script>
+(function () {
+  'use strict';
+  var ENDPOINT = '/api/feedback';
+  var FLUSH_MS = 15000;
+  var MAX_BUFFER = 100;
+
+  // --- Session-ID (nur für die Dauer des Tabs) ---
+  var sid;
+  try {
+    sid = sessionStorage.getItem('mm_sid');
+    if (!sid) {
+      sid = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      sessionStorage.setItem('mm_sid', sid);
+    }
+  } catch (e) { sid = 's' + Math.random().toString(36).slice(2, 10); }
+
+  var buffer = [];
+  var recentErrors = [];
+
+  function ev(type, data) {
+    var e = { t: Date.now(), type: type };
+    if (data) for (var k in data) e[k] = data[k];
+    buffer.push(e);
+    if (buffer.length > MAX_BUFFER) buffer.splice(0, buffer.length - MAX_BUFFER);
+  }
+
+  function send(payload, useBeacon) {
+    try {
+      var body = JSON.stringify(payload);
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'application/json' }));
+      } else {
+        fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
+      }
+    } catch (e) { /* Feedback darf nie die App stören */ }
+  }
+
+  function flush(useBeacon) {
+    if (!buffer.length) return;
+    var events = buffer.splice(0, buffer.length);
+    send({ type: 'events', sid: sid, page: location.pathname + location.search, events: events }, useBeacon);
+  }
+  setInterval(function () { flush(false); }, FLUSH_MS);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(true); });
+  window.addEventListener('pagehide', function () { flush(true); });
+
+  // --- Basis-Event ---
+  ev('session_start', {
+    vw: window.innerWidth, vh: window.innerHeight,
+    touch: 'ontouchstart' in window,
+    lang: navigator.language,
+    build: document.querySelector('meta[name="mm-build"]') ? document.querySelector('meta[name="mm-build"]').content : ''
+  });
+
+  // --- Fehler automatisch melden (sofort, nicht gepuffert) ---
+  function reportError(kind, msg, extra) {
+    var rec = { t: Date.now(), kind: kind, msg: String(msg).slice(0, 500) };
+    if (extra) for (var k in extra) rec[k] = extra[k];
+    recentErrors.push(rec);
+    if (recentErrors.length > 20) recentErrors.shift();
+    ev('js_error', rec);
+    send({ type: 'error', sid: sid, page: location.pathname + location.search, error: rec, lastEvents: buffer.slice(-10) });
+  }
+  window.addEventListener('error', function (e) {
+    reportError('onerror', e.message || e.type, { src: (e.filename || '').slice(-80), line: e.lineno });
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    reportError('unhandledrejection', (e.reason && (e.reason.message || e.reason)) || 'unknown');
+  });
+
+  // --- API-Aufrufe beobachten (Dauer + Status), eigenen Endpunkt ausnehmen ---
+  var origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    var watch = url.indexOf('/api/') !== -1 && url.indexOf(ENDPOINT) === -1;
+    var t0 = watch ? Date.now() : 0;
+    var p = origFetch.apply(this, arguments);
+    if (watch) {
+      var short = url.replace(location.origin, '').slice(0, 120);
+      p.then(function (res) {
+        var ms = Date.now() - t0;
+        if (!res.ok) ev('api_error', { url: short, status: res.status, ms: ms });
+        else if (ms > 3000) ev('api_slow', { url: short, ms: ms });
+      }).catch(function (err) {
+        ev('api_fail', { url: short, ms: Date.now() - t0, err: String(err).slice(0, 120) });
+      });
+    }
+    return p;
+  };
+
+  // --- Nutzungs-Events per Event-Delegation (robust gegen Re-Renders) ---
+  var searchTimer = null;
+  var si = document.getElementById('searchInput');
+  if (si) si.addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+      var q = si.value.trim();
+      if (!q) return;
+      // Ergebniszahl kurz nach dem Debounce der App ablesen
+      setTimeout(function () {
+        var rc = document.getElementById('resultCountTotal');
+        var cards = document.querySelectorAll('#resultsGrid .card').length;
+        ev('search', { q: q.slice(0, 80), resultText: rc ? rc.textContent.slice(0, 40) : '', cards: cards });
+      }, 2500);
+    }, 1500);
+  });
+
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el && el.tagName === 'SELECT' && el.id && el.id.indexOf('filter') === 0) {
+      ev('filter', { id: el.id, value: String(el.value).slice(0, 40) });
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    var card = e.target.closest && e.target.closest('#resultsGrid .card');
+    if (card) {
+      var titleEl = card.querySelector('.card-title');
+      ev('card_open', { title: titleEl ? titleEl.textContent.slice(0, 80) : '' });
+      return;
+    }
+    var link = e.target.closest && e.target.closest('a.btn-primary');
+    if (link) { ev('play_click', { href: (link.href || '').slice(0, 200) }); return; }
+    var chip = e.target.closest && e.target.closest('#quickChips .f-chip');
+    if (chip) { ev('chip_click', { label: chip.textContent.slice(0, 40) }); return; }
+    if (e.target.closest && e.target.closest('#watchlistToggle')) { ev('watchlist_toggle', {}); return; }
+    if (e.target.closest && e.target.closest('#profileToggle')) { ev('profile_toggle', {}); return; }
+  }, true);
+
+  // --- Feedback-Button + Modal ---
+  var css = document.createElement('style');
+  css.textContent =
+    '#mmFbBtn{position:fixed;right:16px;bottom:16px;z-index:9999;background:var(--orange,#ff7a00);color:#fff;border:none;' +
+    'border-radius:22px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);}' +
+    '#mmFbBtn:hover{filter:brightness(1.1);}' +
+    '#mmFbOverlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;}' +
+    '#mmFbBox{background:var(--card,#1c1c22);color:var(--text,#eee);border-radius:12px;max-width:420px;width:100%;padding:20px;font-size:14px;}' +
+    '#mmFbBox h3{margin:0 0 12px;font-size:16px;}' +
+    '#mmFbBox select,#mmFbBox textarea{width:100%;box-sizing:border-box;background:var(--bg,#121217);color:inherit;' +
+    'border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px;font-size:14px;margin-bottom:10px;font-family:inherit;}' +
+    '#mmFbBox textarea{min-height:110px;resize:vertical;}' +
+    '#mmFbRow{display:flex;gap:8px;justify-content:flex-end;}' +
+    '#mmFbRow button{border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;}' +
+    '#mmFbSend{background:var(--orange,#ff7a00);color:#fff;font-weight:600;}' +
+    '#mmFbCancel{background:rgba(255,255,255,.12);color:inherit;}' +
+    '#mmFbNote{font-size:11px;opacity:.6;margin:0 0 10px;}';
+  document.head.appendChild(css);
+
+  var btn = document.createElement('button');
+  btn.id = 'mmFbBtn';
+  btn.type = 'button';
+  btn.textContent = '💬 Feedback';
+  btn.setAttribute('aria-label', 'Feedback geben');
+  document.body.appendChild(btn);
+
+  btn.addEventListener('click', function () {
+    var ov = document.createElement('div');
+    ov.id = 'mmFbOverlay';
+    ov.innerHTML =
+      '<div id="mmFbBox" role="dialog" aria-modal="true" aria-label="Feedback">' +
+      '<h3>Feedback zur MetaMediathek</h3>' +
+      '<select id="mmFbCat"><option value="fehler">🐛 Fehler melden</option>' +
+      '<option value="idee">💡 Idee / Wunsch</option>' +
+      '<option value="lob">👍 Lob / Sonstiges</option></select>' +
+      '<textarea id="mmFbText" placeholder="Was ist passiert bzw. was wünschst du dir? Je konkreter, desto besser."></textarea>' +
+      '<p id="mmFbNote">Mit dem Absenden werden anonym technische Kontextdaten übermittelt (Bildschirmgröße, letzte Aktionen, evtl. Fehlermeldungen). Keine IP-Speicherung, kein Tracking.</p>' +
+      '<div id="mmFbRow"><button id="mmFbCancel" type="button">Abbrechen</button>' +
+      '<button id="mmFbSend" type="button">Absenden</button></div></div>';
+    document.body.appendChild(ov);
+    var ta = document.getElementById('mmFbText');
+    ta.focus();
+    function close() { ov.remove(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    document.getElementById('mmFbCancel').addEventListener('click', close);
+    document.getElementById('mmFbSend').addEventListener('click', function () {
+      var text = ta.value.trim();
+      if (!text) { ta.focus(); return; }
+      send({
+        type: 'feedback', sid: sid,
+        category: document.getElementById('mmFbCat').value,
+        text: text.slice(0, 4000),
+        page: location.pathname + location.search,
+        vw: window.innerWidth, vh: window.innerHeight,
+        lastEvents: buffer.slice(-15),
+        recentErrors: recentErrors.slice(-5)
+      });
+      var box = document.getElementById('mmFbBox');
+      box.innerHTML = '<h3>Danke!</h3><p>Dein Feedback ist angekommen.</p>' +
+        '<div id="mmFbRow"><button id="mmFbCancel" type="button">Schließen</button></div>';
+      document.getElementById('mmFbCancel').addEventListener('click', close);
+      setTimeout(close, 2500);
+    });
+  });
+})();
 </script>
 </body>
 </html>
