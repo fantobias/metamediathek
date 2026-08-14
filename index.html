@@ -1497,6 +1497,15 @@ function buildTasteProfile(text, aiProfile) {
     }
     p.aiExpanded = true;
   }
+  // Sicherheitsnetz: reine Länder-/Regionsnamen als Themen-Wörter entfernen —
+  // sie treffen praktisch alles ("Deutschland" +3P auf jeden Beitrag) und
+  // fluteten den Feed mit Unpassendem (Nutzer-Feedback: "Nachkriegsfilme aus
+  // Deutschland" → Ostdeutschland-News und Dirty Dancing mit 13P)
+  const GEO_STOP = ['deutschland','westdeutschland','ostdeutschland','norddeutschland','sueddeutschland','süddeutschland','europa','amerika','usa','oesterreich','österreich','schweiz','welt','deutsch','deutsche','deutscher'];
+  if (p) {
+    p.contentKeywords = (p.contentKeywords || []).filter(w => !GEO_STOP.includes(normDE(w)));
+    if (p.searchTerms) p.searchTerms = p.searchTerms.filter(w => !GEO_STOP.includes(normDE(w)));
+  }
   return p;
 }
 
@@ -1516,7 +1525,7 @@ async function applyTasteProfile() {
   if (API_MODE) {
     try {
       if (localStorage.getItem('metaMediathek_taste') === text) {
-        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI') || 'null');
+        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI2') || 'null');
         if (cached && Array.isArray(cached.suchbegriffe) && cached.suchbegriffe.length > 0) aiProfile = cached;
       }
     } catch (e) {}
@@ -1532,7 +1541,7 @@ async function applyTasteProfile() {
   statusEl.textContent = `✓ Profil aktiv${aiProfile ? ' · KI-erweitert' : ''} (${tasteKeywords.positives.length} Genres, ${kwCount} Begriffe, ${exCount} Ausschlüsse)`;
   try {
     localStorage.setItem('metaMediathek_taste', text);
-    localStorage.setItem('metaMediathek_tasteAI', aiProfile ? JSON.stringify(aiProfile) : '');
+    localStorage.setItem('metaMediathek_tasteAI2', aiProfile ? JSON.stringify(aiProfile) : '');
   } catch(e) {}
 
   document.getElementById('tastePanel').classList.remove('active');
@@ -1612,7 +1621,7 @@ function clearTasteProfile() {
   document.getElementById('profileToggle').classList.remove('active');
   try {
     localStorage.removeItem('metaMediathek_taste');
-    localStorage.removeItem('metaMediathek_tasteAI');
+    localStorage.removeItem('metaMediathek_tasteAI2');
   } catch(e) {}
   // Reset sort if it was on taste
   if (document.getElementById('filterSort').value === 'taste_desc') {
@@ -1638,9 +1647,9 @@ function detectAudioVariant(item) {
   const text = `${item.title} ${item.topic}`.toLowerCase();
   if (/audiodeskription|\(ad\)|audio.?deskription|\bAD\b/.test(text)) return 'ad';
   if (/gebärdensprache|\(dgs\)|deutsche gebärdensprache/.test(text)) return 'dgs';
-  if (/\(omu\)|original mit untertitel|originalfassung mit untertitel/.test(text)) return 'omu';
+  if (/\(omu\)|original mit untertitel|originalfassung mit untertitel|originalversion mit untertitel/.test(text)) return 'omu';
   if (/\(mit untertiteln?\)|\(untertiteln?\)/.test(text)) return 'ut';
-  if (/\(ov\)|\(of\)|originalversion|originalton|originalfassung|english version|version originale/.test(text)) return 'ov';
+  if (/\(ov\)|\(of\)|originalversion|originalton|originalfassung|english version|version originale|\((englisch|english|französisch|franzoesisch|italienisch|spanisch)\)/.test(text)) return 'ov';
   if (/hörfassung/.test(text)) return 'ad';
   if (/leichte sprache/.test(text)) return 'leicht';
   return 'standard';
@@ -1664,6 +1673,10 @@ function stripVariantSuffix(title) {
     /\s*\((mit\s+)?audiodeskription\)\s*$/i,
     /\s*\(h(ö|oe)rfassung\)\s*$/i,
     /\s*\((omu|omeu|ov|originalversion|originalfassung|originalton|ad|dgs|geb(ä|ae)rdensprache|deutsche\s+geb(ä|ae)rdensprache|leichte\s+sprache)\)\s*$/i,
+    // Kombi- und Sprach-Suffixe: "(Originalversion mit Untertitel)", "(Englisch)" —
+    // fehlten und erzeugten Doppel-Kacheln (Nutzer-Feedback: "Emily" 2x)
+    /\s*\((originalversion|originalfassung|original)\s+mit\s+untertiteln?\)\s*$/i,
+    /\s*\((englisch|english|franz(ö|oe)sisch|fran(ç|c)ais|italienisch|spanisch|d(ä|ae)nisch|schwedisch|norwegisch|polnisch)(e\s+fassung)?\)\s*$/i,
     /\s*[-–|]\s*(audiodeskription|h(ö|oe)rfassung|omu|ov|dgs|geb(ä|ae)rdensprache|mit\s+untertiteln?|leichte\s+sprache)\s*$/i
   ];
   let changed = true;
@@ -3099,7 +3112,7 @@ try {
   if (typeof saved === 'string' && saved.trim()) {
     document.getElementById('tasteProfile').value = saved;
     let savedAI = null;
-    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI') || 'null'); } catch(e) {}
+    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI2') || 'null'); } catch(e) {}
     tasteKeywords = buildTasteProfile(saved, savedAI);
     if (tasteKeywords) {
       document.getElementById('tasteStatus').textContent =
