@@ -1376,8 +1376,40 @@ function scoreTaste(item, tmdb, profile, explain = false) {
     }
   }
 
-  // 2) Individual content keyword matches
-  if (totalTopicKeywords > 0) {
+  // 2a) Themen-Gruppen-Scoring (bevorzugt, wenn KI-Gruppen vorhanden):
+  // Jede vom Nutzer genannte Themen-Gruppe zählt maximal EINMAL — der große
+  // Bonus kommt erst, wenn ALLE genannten Themen mindestens einen Teiltreffer
+  // haben. Verhindert Punkte-Stapeln in einem einzigen Thema.
+  if (profile.contentGroups && profile.contentGroups.length > 0) {
+    let groupHits = 0;
+    for (const g of profile.contentGroups) {
+      let hitKw = null, hitVia = null;
+      for (const kw of g.begriffe) {
+        const m = keywordMatches(text, kw);
+        if (m.hit) { hitKw = kw; hitVia = m.via; break; }
+      }
+      if (hitKw) {
+        groupHits++;
+        score += 4;
+        if (reasons) reasons.push({ pts: 4, text: `Dein Thema "${g.name}": Begriff "${hitKw}"${hitVia ? ` (über Synonym "${hitVia}")` : ''} im Filmtext` });
+      }
+    }
+    const totalGroups = profile.contentGroups.length;
+    if (totalGroups >= 2 && groupHits > 0) {
+      if (groupHits === totalGroups) {
+        score += 8;
+        if (reasons) reasons.push({ pts: 8, text: `Volltreffer-Bonus: ALLE ${totalGroups} genannten Themen kommen vor` });
+      } else if (groupHits / totalGroups >= 0.5) {
+        score += 3;
+        if (reasons) reasons.push({ pts: 3, text: `Bonus: ${groupHits} von ${totalGroups} genannten Themen kommen vor` });
+      } else if (reasons) {
+        const missing = profile.contentGroups.filter(g => !g.begriffe.some(kw => keywordMatches(text, kw).hit)).map(g => g.name);
+        reasons.push({ pts: 0, text: `Kein Bonus: es fehlen deine Themen ${missing.join(', ')}` });
+      }
+    }
+  }
+  // 2b) Individual content keyword matches (Fallback ohne KI-Gruppen)
+  else if (totalTopicKeywords > 0) {
     let keywordHits = 0;
     for (const kw of profile.contentKeywords) {
       const m = keywordMatches(text, kw);
@@ -1483,6 +1515,19 @@ function buildTasteProfile(text, aiProfile) {
     const ausschluesse = clean(aiProfile.ausschluesse);
     const genres = clean(aiProfile.genres).map(g => normDE(g));
     p.searchTerms = begriffe; // für die aktive Beschaffung aus dem Gesamtbestand
+    // Themen-Gruppen (je genanntes Interesse eine Gruppe) — Grundlage für
+    // Coverage-Scoring: ein Film soll in JEDEM genannten Thema treffen,
+    // statt in einem einzigen Thema Punkte zu stapeln (Nutzer-Feedback:
+    // "Katzen mord schwarz weiss" → Krimi ohne Katzen bekam 15P)
+    if (Array.isArray(aiProfile.themen) && aiProfile.themen.length > 0) {
+      p.contentGroups = aiProfile.themen
+        .map(t => ({
+          name: String(t.name || '').slice(0, 40),
+          begriffe: clean(t.begriffe).map(b => normDE(b)),
+        }))
+        .filter(t => t.name && t.begriffe.length > 0);
+      if (p.contentGroups.length === 0) p.contentGroups = null;
+    }
     for (const b of begriffe) {
       const w = normDE(b);
       if (!p.contentKeywords.includes(w)) p.contentKeywords.push(w);
@@ -1509,6 +1554,19 @@ function buildTasteProfile(text, aiProfile) {
   return p;
 }
 
+// Einheitlicher Status-Text: zitiert das AKTIVE Profil, damit klar ist,
+// worauf sich der Haken bezieht (Nutzer-Feedback: nach "Zurücksetzen" +
+// neuem, noch nicht angewendetem Text war der Status nicht zuzuordnen)
+function profileStatusText(text, p, aiUsed) {
+  const t = (text || '').trim();
+  const quote = t.length > 40 ? t.slice(0, 40) + '…' : t;
+  const exCount = (p.negativeKeywords || []).length + (p.negativeGenres || []).length;
+  const inhalt = p.contentGroups && p.contentGroups.length
+    ? `${p.contentGroups.length} Themen: ${p.contentGroups.map(g => g.name).join(', ')}`
+    : `${p.positives.length} Genres, ${(p.contentKeywords || []).length} Begriffe`;
+  return `✓ Profil aktiv: „${quote}“${aiUsed ? ' · KI-erweitert' : ''} (${inhalt} · ${exCount} Ausschlüsse)`;
+}
+
 async function applyTasteProfile() {
   const text = document.getElementById('tasteProfile').value;
   const statusEl = document.getElementById('tasteStatus');
@@ -1525,7 +1583,7 @@ async function applyTasteProfile() {
   if (API_MODE) {
     try {
       if (localStorage.getItem('metaMediathek_taste') === text) {
-        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI2') || 'null');
+        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI3') || 'null');
         if (cached && Array.isArray(cached.suchbegriffe) && cached.suchbegriffe.length > 0) aiProfile = cached;
       }
     } catch (e) {}
@@ -1536,12 +1594,10 @@ async function applyTasteProfile() {
   }
   tasteKeywords = buildTasteProfile(text, aiProfile);
 
-  const kwCount = tasteKeywords.contentKeywords ? tasteKeywords.contentKeywords.length : 0;
-  const exCount = (tasteKeywords.negativeKeywords || []).length + tasteKeywords.negativeGenres.length;
-  statusEl.textContent = `✓ Profil aktiv${aiProfile ? ' · KI-erweitert' : ''} (${tasteKeywords.positives.length} Genres, ${kwCount} Begriffe, ${exCount} Ausschlüsse)`;
+  statusEl.textContent = profileStatusText(text, tasteKeywords, !!aiProfile);
   try {
     localStorage.setItem('metaMediathek_taste', text);
-    localStorage.setItem('metaMediathek_tasteAI2', aiProfile ? JSON.stringify(aiProfile) : '');
+    localStorage.setItem('metaMediathek_tasteAI3', aiProfile ? JSON.stringify(aiProfile) : '');
   } catch(e) {}
 
   document.getElementById('tastePanel').classList.remove('active');
@@ -1621,7 +1677,7 @@ function clearTasteProfile() {
   document.getElementById('profileToggle').classList.remove('active');
   try {
     localStorage.removeItem('metaMediathek_taste');
-    localStorage.removeItem('metaMediathek_tasteAI2');
+    localStorage.removeItem('metaMediathek_tasteAI3');
   } catch(e) {}
   // Reset sort if it was on taste
   if (document.getElementById('filterSort').value === 'taste_desc') {
@@ -2158,9 +2214,12 @@ function renderTasteExplain(item) {
     </div>`).join('');
   const kws = tasteKeywords.contentKeywords || [];
   const negKws = tasteKeywords.negativeKeywords || [];
+  const themenInfo = tasteKeywords.contentGroups && tasteKeywords.contentGroups.length
+    ? `${tasteKeywords.contentGroups.length} Themen (${escHtml(tasteKeywords.contentGroups.map(g => `${g.name}: ${g.begriffe.slice(0, 3).join('/')}`).join(' · '))}) · `
+    : `${kws.length} Themen-Wörter (${escHtml(kws.slice(0, 8).join(', ') || '–')}${kws.length > 8 ? ', …' : ''}) · `;
   const profilInfo = `Dein Profil, so wie die App es versteht: `
     + `${tasteKeywords.positives.length} Genre-Signale (${escHtml(tasteKeywords.positives.map(p => p.genre).join(', ') || '–')}) · `
-    + `${kws.length} Themen-Wörter (${escHtml(kws.slice(0, 8).join(', ') || '–')}${kws.length > 8 ? ', …' : ''}) · `
+    + themenInfo
     + `${tasteKeywords.negativeGenres.length} Genre-Ausschlüsse (${escHtml(tasteKeywords.negativeGenres.map(p => p.genre).join(', ') || '–')}) · `
     + `${negKws.length} Ausschluss-Themen (${escHtml(negKws.slice(0, 5).join(', ') || '–')})`;
   return `
@@ -3112,15 +3171,28 @@ try {
   if (typeof saved === 'string' && saved.trim()) {
     document.getElementById('tasteProfile').value = saved;
     let savedAI = null;
-    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI2') || 'null'); } catch(e) {}
+    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI3') || 'null'); } catch(e) {}
     tasteKeywords = buildTasteProfile(saved, savedAI);
     if (tasteKeywords) {
-      document.getElementById('tasteStatus').textContent =
-        `✓ Profil aktiv (${tasteKeywords.positives.length} Vorlieben, ${tasteKeywords.negativeGenres.length} Ausschlüsse)`;
+      document.getElementById('tasteStatus').textContent = profileStatusText(saved, tasteKeywords, !!savedAI);
       document.getElementById('profileToggle').classList.add('active');
     }
   }
 } catch(e) {}
+
+// Bearbeitet der Nutzer den Profiltext, ohne anzuwenden, darf der Status
+// nicht weiter das alte aktive Profil suggerieren
+document.getElementById('tasteProfile').addEventListener('input', () => {
+  let saved = '';
+  try { saved = localStorage.getItem('metaMediathek_taste') || ''; } catch (e) {}
+  const cur = document.getElementById('tasteProfile').value.trim();
+  const st = document.getElementById('tasteStatus');
+  if (tasteKeywords && cur !== saved.trim()) {
+    st.textContent = '✏️ Text geändert — noch nicht angewendet. Klicke „Profil anwenden“.';
+  } else if (tasteKeywords) {
+    st.textContent = profileStatusText(saved, tasteKeywords, true);
+  }
+});
 
 // Init watchlist count
 updateWlCount();
