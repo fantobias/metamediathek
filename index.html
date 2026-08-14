@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta name="mm-build" content="test-fixes-2026-08-14">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -117,6 +118,7 @@
   .btn-sm { padding: 6px 14px; font-size: 12px; }
 
   .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .filter-toggle-btn { display: none; } /* nur mobil sichtbar (Media Query unten) */
   .filter-select {
     padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-size: 13px;
@@ -481,7 +483,11 @@
     .search-bar { flex-wrap: wrap; }
     .search-input { flex: 1 1 100%; font-size: 16px; min-height: 44px; } /* 16px verhindert iOS-Auto-Zoom */
     .search-bar .btn { flex: 1; min-height: 44px; }
-    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    /* Mobil: Filterwand standardmäßig eingeklappt — 8 Dropdowns schoben die
+       Ergebnisse komplett unter den Fold (Nutzertest, beide Mobil-Personas) */
+    .filters { display: none; }
+    .filters.open { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .filter-toggle-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin-bottom: 8px; }
     .filter-group { width: 100%; min-width: 0; }
     .filter-select { width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
     /* Chips: horizontal scrollen statt umbrechen */
@@ -574,6 +580,8 @@
     </div>
   </div>
 
+  <button type="button" class="btn btn-secondary filter-toggle-btn" id="filterToggleBtn"
+          onclick="const f=document.querySelector('.filters'); f.classList.toggle('open'); this.textContent = f.classList.contains('open') ? 'Filter ausblenden ▲' : 'Filter & Sortierung ▼';">Filter &amp; Sortierung ▼</button>
   <div class="filters">
     <div class="filter-group">
       <span class="filter-label">Sender</span>
@@ -624,7 +632,7 @@
     </div>
     <div class="filter-group">
       <span class="filter-label">Sortierung</span>
-      <select class="filter-select" id="filterSort" onchange="doSearch()">
+      <select class="filter-select" id="filterSort" onchange="onSortChange()">
         <option value="timestamp_desc">Neueste zuerst</option>
         <option value="timestamp_asc">Älteste zuerst</option>
         <option value="duration_desc">Längste zuerst</option>
@@ -634,10 +642,10 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Tonfassung</span>
+      <span class="filter-label">Barrierefreiheit / Fassung</span>
       <select class="filter-select" id="filterAudio" onchange="applySortAndFilter()">
         <option value="standard" selected>Alle (Fassungen gruppiert)</option>
-        <option value="ut">Nur mit Untertitel-Fassung</option>
+        <option value="ut">Mit Untertiteln</option>
         <option value="ad">Nur mit Audiodeskription</option>
         <option value="dgs">Nur mit Gebärdensprache</option>
         <option value="ov">Nur mit Originalton</option>
@@ -645,7 +653,7 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Min. Rating</span>
+      <span class="filter-label">TMDB-Bewertung (keine FSK!)</span>
       <select class="filter-select" id="filterRating" onchange="applySortAndFilter()">
         <option value="0">Alle</option>
         <option value="5">Ab 5.0 ⭐</option>
@@ -784,7 +792,10 @@ const API_MODE = location.protocol.startsWith('http') && !location.hostname.ends
 const TMDB_API_KEY = '2e8e36990eb20bc733fd845b092af8a8';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
-const CORS_PROXIES = ['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+// Öffentliche CORS-Proxys entfernt (Nutzertest: corsproxy.io antwortet 403,
+// allorigins braucht >20 s — beide verlängerten nur die gefühlte Ladezeit).
+// Fallback-Kette ist jetzt: eigener Proxy (2 Versuche) → direkt zu MVW.
+const CORS_PROXIES = [''];
 
 // Baut eine TMDB-URL: im API-Modus über den eigenen Proxy (Key bleibt Server-Sache)
 function tmdbApiUrl(path, query) {
@@ -1497,11 +1508,22 @@ async function applyTasteProfile() {
     return;
   }
 
-  // Im API-Modus: Freitext einmalig per KI in Begriffe/Genres/Ausschlüsse übersetzen
+  // Im API-Modus: Freitext einmalig per KI in Begriffe/Genres/Ausschlüsse übersetzen.
+  // Bei UNVERÄNDERTEM Text die gecachte Interpretation wiederverwenden — jede
+  // Neu-Interpretation kann anders ausfallen und machte das Feature unberechenbar
+  // (Nutzertest: zweite Anwendung desselben Profils ergab absurden Feed)
   let aiProfile = null;
   if (API_MODE) {
-    statusEl.textContent = '🤖 Profil wird interpretiert…';
-    aiProfile = await fetchProfilInterpretation(text);
+    try {
+      if (localStorage.getItem('metaMediathek_taste') === text) {
+        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI') || 'null');
+        if (cached && Array.isArray(cached.suchbegriffe) && cached.suchbegriffe.length > 0) aiProfile = cached;
+      }
+    } catch (e) {}
+    if (!aiProfile) {
+      statusEl.textContent = '🤖 Profil wird interpretiert…';
+      aiProfile = await fetchProfilInterpretation(text);
+    }
   }
   tasteKeywords = buildTasteProfile(text, aiProfile);
 
@@ -1880,8 +1902,12 @@ async function fetchOwnProxy(payload) {
 // dann die bisherige Fallback-Kette (direkt → corsproxy → allorigins)
 async function fetchMediathek(payload) {
   if (API_MODE) {
-    try { return await fetchOwnProxy(payload); }
-    catch (err) { console.warn('Eigener Proxy nicht erreichbar, nutze Fallback-Kette:', err.message); }
+    // Zwei Versuche über den eigenen Proxy — ein einzelner Timeout (MVW hat
+    // Lastspitzen) soll nicht sofort in die langsame Fallback-Kette führen
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try { return await fetchOwnProxy(payload); }
+      catch (err) { console.warn(`Eigener Proxy, Versuch ${attempt}/2 fehlgeschlagen:`, err.message); }
+    }
   }
   if (activeCorsProxy !== '') {
     try { return await fetchWithProxy(activeCorsProxy, payload); }
@@ -1959,7 +1985,10 @@ async function enrichWithTMDB_background(results) {
       item._tmdb = tmdb;
       // Senderbeschreibung (og:description) nachladen, wenn TMDB keine
       // Inhaltsangabe liefert — mehr Text für Anzeige und Taste-Matching
-      if (API_MODE && !(tmdb && tmdb.overview) && item._senderDesc === undefined && safeUrl(item.url_website)) {
+      // Senderbeschreibungen nur bei überschaubaren Ergebnismengen nachladen —
+      // bei 200 Treffern erzeugte das Hunderte langsame /api/meta-Aufrufe
+      // und war der größte Einzelposten der Fehler-/Latenzflut (Nutzertest)
+      if (API_MODE && total <= 60 && !(tmdb && tmdb.overview) && item._senderDesc === undefined && safeUrl(item.url_website)) {
         const meta = await fetchJsonSafe('/api/meta?url=' + encodeURIComponent(safeUrl(item.url_website)));
         if (ctrl.cancelled) return;
         item._senderDesc = (meta && typeof meta.description === 'string') ? meta.description : null;
@@ -2231,6 +2260,10 @@ function applySortAndFilter() {
     filtered = filtered.filter(r => {
       const inVariants = r._variants && r._variants.some(v => v.variant === audioFilter);
       if (inVariants) r._activeVariant = audioFilter;
+      // UT-Filter: zusätzlich das MVW-Untertitel-Flag (url_subtitle) akzeptieren —
+      // die Titel-Marker "(mit Untertiteln)" sind nachweislich unvollständig und
+      // unterschlugen sonst real untertitelte Sendungen (Nutzertest, Persona Sabine)
+      if (audioFilter === 'ut' && r.url_subtitle) return true;
       return inVariants || audioOf(r) === audioFilter;
     });
   }
@@ -2277,7 +2310,9 @@ function applySortAndFilter() {
   // Update UI counts
   const filteredInfo = document.getElementById('filteredInfo');
   if (filtered.length !== enrichedResults.length) {
-    filteredInfo.innerHTML = `<strong>${filtered.length}</strong> angezeigt`;
+    // Klar benennen, WORAUF sich die Zahl bezieht — der Widerspruch
+    // "1.708 Treffer, 0 Karten" war der häufigste Verwirrungs-Befund im Nutzertest
+    filteredInfo.innerHTML = `davon auf dieser Seite sichtbar: <strong>${filtered.length}</strong> von ${enrichedResults.length} (Filter aktiv)`;
   } else {
     filteredInfo.innerHTML = '';
   }
@@ -2288,6 +2323,7 @@ function applySortAndFilter() {
   // gespeicherter Index sonst auf den falschen Film zeigen
   closeBookmarkDropdown();
 
+  unveilGrid();
   if (filtered.length === 0) {
     displayedResults = [];
     document.getElementById('resultsGrid').innerHTML = '';
@@ -2306,6 +2342,7 @@ function applySortAndFilter() {
   displayedResults = filtered;
   // Ein einziges innerHTML-Assignment für das ganze Grid → 1 Reflow pro Render
   document.getElementById('resultsGrid').innerHTML = filtered.map((r, i) => renderCard(r, i)).join('');
+  unveilGrid();
   AppEvents.emit('results:rendered', { count: filtered.length });
 }
 
@@ -2322,11 +2359,26 @@ function rescoreAndRender() {
 function showLoading(subText) {
   document.getElementById('loadingState').style.display = 'flex';
   document.getElementById('loadingSub').textContent = subText;
-  document.getElementById('resultsGrid').innerHTML = '';
+  const grid = document.getElementById('resultsGrid');
+  // Alte Ergebnisse während des Nachladens ausgegraut stehen lassen statt
+  // hart zu leeren — die "plötzlich leere Seite" war ein Kern-Befund des
+  // Nutzertests (gefühlte Latenz, wirkt wie Absturz/Datenverlust)
+  if (grid.children.length > 0) {
+    grid.style.opacity = '0.35';
+    grid.style.pointerEvents = 'none';
+  } else {
+    grid.innerHTML = '';
+  }
   document.getElementById('emptyState').style.display = 'none';
-  document.getElementById('pagination').style.display = 'none';
   document.getElementById('tmdbStatus').textContent = '';
   closeBookmarkDropdown();
+}
+
+// Grid nach Abschluss eines Ladevorgangs wieder aktivieren
+function unveilGrid() {
+  const grid = document.getElementById('resultsGrid');
+  grid.style.opacity = '1';
+  grid.style.pointerEvents = '';
 }
 
 function showEmpty(msg) {
@@ -2334,18 +2386,24 @@ function showEmpty(msg) {
   el.querySelector('div:last-child').textContent =
     msg || 'Keine Ergebnisse gefunden. Versuche eine andere Suche oder passe die Filter an.';
   el.style.display = 'block';
+  document.getElementById('resultsGrid').innerHTML = '';
+  unveilGrid();
 }
 
 function updatePagination() {
   const size = parseInt(document.getElementById('filterSize').value);
   const pag = document.getElementById('pagination');
-  if (totalResults > size) {
+  if (totalResults > size || currentOffset > 0) {
     pag.style.display = 'flex';
     const page = Math.floor(currentOffset / size) + 1;
+    const capped = totalResults >= 10000; // MVW-Deckel: "von 50" wäre Scheingenauigkeit
     const totalPages = Math.ceil(totalResults / size);
-    document.getElementById('pageInfo').textContent = `Seite ${page} von ${totalPages}`;
+    document.getElementById('pageInfo').textContent = capped ? `Seite ${page}` : `Seite ${page} von ${totalPages}`;
     document.getElementById('btnPrev').disabled = currentOffset === 0;
-    document.getElementById('btnNext').disabled = currentOffset + size >= totalResults;
+    // "Weiter" nur, wenn der Server eine volle Seite geliefert hat — sonst gibt
+    // es keine Folgeseite, egal was die (gedeckelte) Trefferzahl behauptet
+    document.getElementById('btnNext').disabled =
+      (lastResults.length < size) || (!capped && currentOffset + size >= totalResults);
   } else {
     pag.style.display = 'none';
   }
@@ -2414,7 +2472,10 @@ async function doSearch(resetOffset = true, keepChips = false) {
 
   lastResults = data.result.results;
   totalResults = data.result.queryInfo ? data.result.queryInfo.totalResults : lastResults.length;
-  document.getElementById('resultCountTotal').textContent = totalResults.toLocaleString('de-DE');
+  // MVW deckelt die Trefferzahl bei 10.000 — ehrlich als "10.000+" ausweisen,
+  // sonst wirkt die Zahl wie ein eingefrorener Platzhalter (Nutzertest-Befund)
+  document.getElementById('resultCountTotal').textContent =
+    totalResults >= 10000 ? '10.000+' : totalResults.toLocaleString('de-DE');
 
   if (lastResults.length === 0) {
     enrichedResults = [];
@@ -2439,6 +2500,18 @@ async function doSearch(resetOffset = true, keepChips = false) {
 
   // Then enrich with TMDB in background (cards update progressively)
   enrichWithTMDB_background(enrichedResults);
+}
+
+// Sortierwechsel: Client-Sortierungen (Rating, Geschmack) brauchen keinen neuen
+// Server-Abruf — die Daten liegen schon da. Spart 10-30 s Wartezeit (Nutzertest-Befund).
+function onSortChange() {
+  const v = document.getElementById('filterSort').value;
+  if ((v === 'rating_desc' || v === 'taste_desc') && enrichedResults.length > 0) {
+    applySortAndFilter();
+    syncStateToURL();
+  } else {
+    doSearch();
+  }
 }
 
 function nextPage() {
@@ -3042,8 +3115,220 @@ updateWlCount();
 // Geteilte Links: Filterzustand aus URL-Parametern wiederherstellen
 restoreStateFromURL();
 
-// Initial load
-doSearch();
+// Initial load: Mit gespeichertem Geschmacksprofil direkt den Empfehlungs-Feed
+// laden — vorher ging die Personalisierung nach jedem Reload verloren
+// (Nutzertest-Befund). Geteilte Links (?q=…) haben weiter Vorrang.
+if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.length > 0
+    && !new URLSearchParams(location.search).get('q')) {
+  document.getElementById('filterSort').value = 'taste_desc';
+  profileFeedSearch();
+} else {
+  doSearch();
+}
+</script>
+
+<!-- ===================== MetaMediathek Telemetrie & Feedback (test-Branch) ===================== -->
+<!-- Selbstständiges Modul, keine Eingriffe in den App-Code. Sendet anonyme Nutzungs-Events,      -->
+<!-- automatische Fehlerberichte und manuelles Feedback an /api/feedback. Keine IPs, kein          -->
+<!-- Fingerprinting — nur eine zufällige Session-ID im sessionStorage.                             -->
+<script>
+(function () {
+  'use strict';
+  var ENDPOINT = '/api/feedback';
+  var FLUSH_MS = 15000;
+  var MAX_BUFFER = 100;
+
+  // --- Session-ID (nur für die Dauer des Tabs) ---
+  var sid;
+  try {
+    sid = sessionStorage.getItem('mm_sid');
+    if (!sid) {
+      sid = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      sessionStorage.setItem('mm_sid', sid);
+    }
+  } catch (e) { sid = 's' + Math.random().toString(36).slice(2, 10); }
+
+  var buffer = [];
+  var recentErrors = [];
+
+  function ev(type, data) {
+    var e = { t: Date.now(), type: type };
+    if (data) for (var k in data) e[k] = data[k];
+    buffer.push(e);
+    if (buffer.length > MAX_BUFFER) buffer.splice(0, buffer.length - MAX_BUFFER);
+  }
+
+  function send(payload, useBeacon) {
+    try {
+      var body = JSON.stringify(payload);
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'application/json' }));
+      } else {
+        fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true }).catch(function () {});
+      }
+    } catch (e) { /* Feedback darf nie die App stören */ }
+  }
+
+  function flush(useBeacon) {
+    if (!buffer.length) return;
+    var events = buffer.splice(0, buffer.length);
+    send({ type: 'events', sid: sid, page: location.pathname + location.search, events: events }, useBeacon);
+  }
+  setInterval(function () { flush(false); }, FLUSH_MS);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flush(true); });
+  window.addEventListener('pagehide', function () { flush(true); });
+
+  // --- Basis-Event ---
+  ev('session_start', {
+    vw: window.innerWidth, vh: window.innerHeight,
+    touch: 'ontouchstart' in window,
+    lang: navigator.language,
+    build: document.querySelector('meta[name="mm-build"]') ? document.querySelector('meta[name="mm-build"]').content : ''
+  });
+
+  // --- Fehler automatisch melden (sofort, nicht gepuffert) ---
+  function reportError(kind, msg, extra) {
+    var rec = { t: Date.now(), kind: kind, msg: String(msg).slice(0, 500) };
+    if (extra) for (var k in extra) rec[k] = extra[k];
+    recentErrors.push(rec);
+    if (recentErrors.length > 20) recentErrors.shift();
+    ev('js_error', rec);
+    send({ type: 'error', sid: sid, page: location.pathname + location.search, error: rec, lastEvents: buffer.slice(-10) });
+  }
+  window.addEventListener('error', function (e) {
+    reportError('onerror', e.message || e.type, { src: (e.filename || '').slice(-80), line: e.lineno });
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    reportError('unhandledrejection', (e.reason && (e.reason.message || e.reason)) || 'unknown');
+  });
+
+  // --- API-Aufrufe beobachten (Dauer + Status), eigenen Endpunkt ausnehmen ---
+  var origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    var url = (typeof input === 'string') ? input : (input && input.url) || '';
+    var watch = url.indexOf('/api/') !== -1 && url.indexOf(ENDPOINT) === -1;
+    var t0 = watch ? Date.now() : 0;
+    var p = origFetch.apply(this, arguments);
+    if (watch) {
+      var short = url.replace(location.origin, '').slice(0, 120);
+      p.then(function (res) {
+        var ms = Date.now() - t0;
+        if (!res.ok) ev('api_error', { url: short, status: res.status, ms: ms });
+        else if (ms > 3000) ev('api_slow', { url: short, ms: ms });
+      }).catch(function (err) {
+        ev('api_fail', { url: short, ms: Date.now() - t0, err: String(err).slice(0, 120) });
+      });
+    }
+    return p;
+  };
+
+  // --- Nutzungs-Events per Event-Delegation (robust gegen Re-Renders) ---
+  var searchTimer = null;
+  var si = document.getElementById('searchInput');
+  if (si) si.addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+      var q = si.value.trim();
+      if (!q) return;
+      // Ergebniszahl kurz nach dem Debounce der App ablesen
+      setTimeout(function () {
+        var rc = document.getElementById('resultCountTotal');
+        var cards = document.querySelectorAll('#resultsGrid .card').length;
+        ev('search', { q: q.slice(0, 80), resultText: rc ? rc.textContent.slice(0, 40) : '', cards: cards });
+      }, 2500);
+    }, 1500);
+  });
+
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el && el.tagName === 'SELECT' && el.id && el.id.indexOf('filter') === 0) {
+      ev('filter', { id: el.id, value: String(el.value).slice(0, 40) });
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    var card = e.target.closest && e.target.closest('#resultsGrid .card');
+    if (card) {
+      var titleEl = card.querySelector('.card-title');
+      ev('card_open', { title: titleEl ? titleEl.textContent.slice(0, 80) : '' });
+      return;
+    }
+    var link = e.target.closest && e.target.closest('a.btn-primary');
+    if (link) { ev('play_click', { href: (link.href || '').slice(0, 200) }); return; }
+    var chip = e.target.closest && e.target.closest('#quickChips .f-chip');
+    if (chip) { ev('chip_click', { label: chip.textContent.slice(0, 40) }); return; }
+    if (e.target.closest && e.target.closest('#watchlistToggle')) { ev('watchlist_toggle', {}); return; }
+    if (e.target.closest && e.target.closest('#profileToggle')) { ev('profile_toggle', {}); return; }
+  }, true);
+
+  // --- Feedback-Button + Modal ---
+  var css = document.createElement('style');
+  css.textContent =
+    '#mmFbBtn{position:fixed;right:16px;bottom:16px;z-index:9999;background:var(--orange,#ff7a00);color:#fff;border:none;' +
+    'border-radius:22px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.4);}' +
+    '#mmFbBtn:hover{filter:brightness(1.1);}' +
+    '#mmFbOverlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;}' +
+    '#mmFbBox{background:var(--card,#1c1c22);color:var(--text,#eee);border-radius:12px;max-width:420px;width:100%;padding:20px;font-size:14px;}' +
+    '#mmFbBox h3{margin:0 0 12px;font-size:16px;}' +
+    '#mmFbBox select,#mmFbBox textarea{width:100%;box-sizing:border-box;background:var(--bg,#121217);color:inherit;' +
+    'border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px;font-size:14px;margin-bottom:10px;font-family:inherit;}' +
+    '#mmFbBox textarea{min-height:110px;resize:vertical;}' +
+    '#mmFbRow{display:flex;gap:8px;justify-content:flex-end;}' +
+    '#mmFbRow button{border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;}' +
+    '#mmFbSend{background:var(--orange,#ff7a00);color:#fff;font-weight:600;}' +
+    '#mmFbCancel{background:rgba(255,255,255,.12);color:inherit;}' +
+    '#mmFbNote{font-size:11px;opacity:.6;margin:0 0 10px;}' +
+    /* Platz für den Button freihalten, damit er Pagination/Inhalte nicht verdeckt */
+    'body{padding-bottom:64px;}' +
+    '@media(max-width:640px){#mmFbBtn{padding:7px 11px;font-size:12px;border-radius:16px;}}';
+  document.head.appendChild(css);
+
+  var btn = document.createElement('button');
+  btn.id = 'mmFbBtn';
+  btn.type = 'button';
+  btn.textContent = '💬 Feedback';
+  btn.setAttribute('aria-label', 'Feedback geben');
+  document.body.appendChild(btn);
+
+  btn.addEventListener('click', function () {
+    var ov = document.createElement('div');
+    ov.id = 'mmFbOverlay';
+    ov.innerHTML =
+      '<div id="mmFbBox" role="dialog" aria-modal="true" aria-label="Feedback">' +
+      '<h3>Feedback zur MetaMediathek</h3>' +
+      '<select id="mmFbCat"><option value="fehler">🐛 Fehler melden</option>' +
+      '<option value="idee">💡 Idee / Wunsch</option>' +
+      '<option value="lob">👍 Lob / Sonstiges</option></select>' +
+      '<textarea id="mmFbText" placeholder="Was ist passiert bzw. was wünschst du dir? Je konkreter, desto besser."></textarea>' +
+      '<p id="mmFbNote">Mit dem Absenden werden anonym technische Kontextdaten übermittelt (Bildschirmgröße, letzte Aktionen, evtl. Fehlermeldungen). Keine IP-Speicherung, kein Tracking.</p>' +
+      '<div id="mmFbRow"><button id="mmFbCancel" type="button">Abbrechen</button>' +
+      '<button id="mmFbSend" type="button">Absenden</button></div></div>';
+    document.body.appendChild(ov);
+    var ta = document.getElementById('mmFbText');
+    ta.focus();
+    function close() { ov.remove(); }
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    document.getElementById('mmFbCancel').addEventListener('click', close);
+    document.getElementById('mmFbSend').addEventListener('click', function () {
+      var text = ta.value.trim();
+      if (!text) { ta.focus(); return; }
+      send({
+        type: 'feedback', sid: sid,
+        category: document.getElementById('mmFbCat').value,
+        text: text.slice(0, 4000),
+        page: location.pathname + location.search,
+        vw: window.innerWidth, vh: window.innerHeight,
+        lastEvents: buffer.slice(-15),
+        recentErrors: recentErrors.slice(-5)
+      });
+      var box = document.getElementById('mmFbBox');
+      box.innerHTML = '<h3>Danke!</h3><p>Dein Feedback ist angekommen.</p>' +
+        '<div id="mmFbRow"><button id="mmFbCancel" type="button">Schließen</button></div>';
+      document.getElementById('mmFbCancel').addEventListener('click', close);
+      setTimeout(close, 2500);
+    });
+  });
+})();
 </script>
 </body>
 </html>

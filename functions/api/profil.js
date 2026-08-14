@@ -41,9 +41,13 @@ export async function onRequestPost(context) {
     + 'Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne Erklaerung, ohne Markdown. Schema: '
     + '{"suchbegriffe": [...], "genres": [...], "ausschluesse": [...]}. '
     + 'suchbegriffe: 6-12 praegnante deutsche Einzelwoerter oder kurze Begriffe, mit denen man in Titeln/Themen von TV-Sendungen suchen wuerde. '
-    + 'Erweitere die genannten Interessen um eng verwandte Konzepte und Synonyme (z.B. "Hunde" -> auch Welpen, Tierheim, Hundetrainer; "Islam" -> auch Muslime, Moschee, Koran, Nahost, arabische Welt). Keine Fantasiebegriffe, keine zu allgemeinen Woerter wie "Film" oder "Doku". '
-    + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. '
-    + 'ausschluesse: Themen/Begriffe, die der Nutzer ausdruecklich NICHT will (leer, wenn keine genannt).';
+    + 'Erweitere NUR die ausdruecklich genannten Interessen um eng verwandte Konzepte und Synonyme (z.B. "Hunde" -> auch Welpen, Tierheim, Hundetrainer; "skandinavische Krimis" -> auch Nordic Noir, Schweden, Daenemark, Kommissar). '
+    + 'ERFINDE KEINE Vorlieben, die der Nutzer nicht genannt hat (wenn er nichts von Arthouse sagt, gehoert Arthouse nicht hinein). Keine zu allgemeinen Woerter wie "Film" oder "Doku". '
+    + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. Auch hier: nur was aus den genannten Interessen folgt. '
+    + 'ausschluesse: SEHR WICHTIG. Alles, was der Nutzer NICHT will. Erkenne Verneinungen wie "keine …", "kein …", "nichts mit …", "ohne …", "bitte nicht …", "… mag ich nicht", "ausser …". '
+    + 'Erweitere Ausschluesse um enge Synonyme (z.B. "Schlagermusik" -> Schlager, Volksmusik; "nichts mit Kochen" -> Kochen, Kochshow, Rezepte, Backen). Leer NUR, wenn wirklich keine Verneinung im Text steht. '
+    + 'Beispiel: "Ich mag skandinavische Krimis und Bergdokus, aber keine Schlagermusik und nichts mit Kochen" -> '
+    + '{"suchbegriffe":["Skandinavien","Nordic Noir","Kommissar","Schweden","Berge","Alpen","Gipfel","Bergsteigen"],"genres":["krimi","nordic","natur","doku"],"ausschluesse":["Schlager","Volksmusik","Kochen","Kochshow","Rezepte"]}';
 
   // Modell-Fallback-Kette: Namen aendern sich bei Cloudflare gelegentlich.
   const MODELS = [
