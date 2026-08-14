@@ -39,17 +39,17 @@ export async function onRequestPost(context) {
 
   const system = 'Du analysierst die Film-Geschmacksbeschreibung eines Nutzers einer deutschen Mediatheken-Suche. '
     + 'Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne Erklaerung, ohne Markdown. Schema: '
-    + '{"suchbegriffe": [...], "genres": [...], "ausschluesse": [...]}. '
-    + 'suchbegriffe: 6-12 praegnante deutsche Einzelwoerter oder kurze Begriffe, mit denen man in Titeln/Themen von TV-Sendungen suchen wuerde. '
-    + 'Erweitere NUR die ausdruecklich genannten Interessen um eng verwandte Konzepte und Synonyme (z.B. "Hunde" -> auch Welpen, Tierheim, Hundetrainer; "skandinavische Krimis" -> auch Nordic Noir, Schweden, Daenemark, Kommissar). '
-    + 'ERFINDE KEINE Vorlieben, die der Nutzer nicht genannt hat (wenn er nichts von Arthouse sagt, gehoert Arthouse nicht hinein). Keine zu allgemeinen Woerter wie "Film" oder "Doku". '
-    + 'Verwende KEINE reinen Laender-, Regions- oder Staedtenamen als eigenstaendige suchbegriffe (NICHT "Deutschland", "USA", "Europa", "Bayern") — sie treffen jeden Nachrichtenbeitrag und sind wertlos. Uebersetze die geografische Angabe stattdessen in themenspezifische Begriffe. '
-    + 'Beispiel: "Ich mag Nachkriegsfilme aus Deutschland" -> {"suchbegriffe":["Nachkriegszeit","Truemmerfilm","Wirtschaftswunder","Heimkehrer","Besatzungszeit","Wiederaufbau","Stunde Null"],"genres":["drama","geschichte","kriegsfilm"],"ausschluesse":[]}. '
-    + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. Auch hier: nur was aus den genannten Interessen folgt. '
+    + '{"themen": [{"name": "...", "begriffe": [...]}], "genres": [...], "ausschluesse": [...]}. '
+    + 'themen: EINE Gruppe pro ausdruecklich genanntem Interesse des Nutzers (nicht mehr, nicht weniger). '
+    + 'name = kurze Bezeichnung des Interesses. begriffe = 2-6 deutsche Suchbegriffe je Gruppe: das Wort selbst plus eng verwandte Konzepte und Synonyme '
+    + '(z.B. Interesse "Katzen" -> begriffe ["Katze","Katzen","Kater","Stubentiger"]; "skandinavische Krimis" -> ["Nordic Noir","Skandinavien","Schweden","Kommissar"]). '
+    + 'ERFINDE KEINE Interessen, die der Nutzer nicht genannt hat. Keine zu allgemeinen Woerter wie "Film" oder "Doku". '
+    + 'Verwende KEINE reinen Laender-, Regions- oder Staedtenamen als begriffe (NICHT "Deutschland", "USA", "Europa", "Bayern") — sie treffen jeden Nachrichtenbeitrag. Uebersetze Geografie in themenspezifische Begriffe. '
+    + 'Beispiel 1: "Katzen, Mord, schwarz-weiss" -> {"themen":[{"name":"Katzen","begriffe":["Katze","Katzen","Kater","Stubentiger"]},{"name":"Mord/Krimi","begriffe":["Mord","Krimi","Kommissar","Mordfall"]},{"name":"Schwarzweiss","begriffe":["schwarzweiss","schwarz-weiss","Filmklassiker"]}],"genres":["krimi"],"ausschluesse":[]}. '
+    + 'Beispiel 2: "Ich mag Nachkriegsfilme aus Deutschland" -> {"themen":[{"name":"Nachkriegszeit","begriffe":["Nachkriegszeit","Truemmerfilm","Wirtschaftswunder","Heimkehrer","Besatzungszeit","Stunde Null"]}],"genres":["drama","geschichte","kriegsfilm"],"ausschluesse":[]}. '
+    + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. Nur was aus den genannten Interessen folgt. '
     + 'ausschluesse: SEHR WICHTIG. Alles, was der Nutzer NICHT will. Erkenne Verneinungen wie "keine …", "kein …", "nichts mit …", "ohne …", "bitte nicht …", "… mag ich nicht", "ausser …". '
-    + 'Erweitere Ausschluesse um enge Synonyme (z.B. "Schlagermusik" -> Schlager, Volksmusik; "nichts mit Kochen" -> Kochen, Kochshow, Rezepte, Backen). Leer NUR, wenn wirklich keine Verneinung im Text steht. '
-    + 'Beispiel: "Ich mag skandinavische Krimis und Bergdokus, aber keine Schlagermusik und nichts mit Kochen" -> '
-    + '{"suchbegriffe":["Skandinavien","Nordic Noir","Kommissar","Schweden","Berge","Alpen","Gipfel","Bergsteigen"],"genres":["krimi","nordic","natur","doku"],"ausschluesse":["Schlager","Volksmusik","Kochen","Kochshow","Rezepte"]}';
+    + 'Erweitere Ausschluesse um enge Synonyme (z.B. "Schlagermusik" -> Schlager, Volksmusik; "nichts mit Kochen" -> Kochen, Kochshow, Rezepte, Backen). Leer NUR, wenn wirklich keine Verneinung im Text steht.';
 
   // Modell-Fallback-Kette: Namen aendern sich bei Cloudflare gelegentlich.
   const MODELS = [
@@ -95,8 +95,23 @@ export async function onRequestPost(context) {
   try { parsed = JSON.parse(m[0]); } catch (e) { return jsonResponse({ error: 'JSON nicht parsebar' }, 502); }
 
   const genres = cleanList(parsed.genres, 5).map(g => g.toLowerCase()).filter(g => GENRE_KEYS.includes(g));
+  // Themen-Gruppen validieren; flache suchbegriffe zusätzlich liefern
+  // (abwärtskompatibel — der Empfehlungs-Feed sucht mit der flachen Liste)
+  const themen = [];
+  if (Array.isArray(parsed.themen)) {
+    for (const t of parsed.themen.slice(0, 8)) {
+      if (!t || typeof t !== 'object') continue;
+      const name = (typeof t.name === 'string' ? t.name.trim() : '').slice(0, 40);
+      const begriffe = cleanList(t.begriffe, 6);
+      if (name && begriffe.length > 0) themen.push({ name, begriffe });
+    }
+  }
+  const flach = [];
+  for (const t of themen) for (const b of t.begriffe) { if (!flach.includes(b) && flach.length < 15) flach.push(b); }
+  const suchbegriffe = flach.length > 0 ? flach : cleanList(parsed.suchbegriffe, 12);
   return jsonResponse({
-    suchbegriffe: cleanList(parsed.suchbegriffe, 12),
+    themen: themen,
+    suchbegriffe: suchbegriffe,
     genres: genres,
     ausschluesse: cleanList(parsed.ausschluesse, 8)
   });
