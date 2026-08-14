@@ -43,6 +43,8 @@ export async function onRequestPost(context) {
     + 'suchbegriffe: 6-12 praegnante deutsche Einzelwoerter oder kurze Begriffe, mit denen man in Titeln/Themen von TV-Sendungen suchen wuerde. '
     + 'Erweitere NUR die ausdruecklich genannten Interessen um eng verwandte Konzepte und Synonyme (z.B. "Hunde" -> auch Welpen, Tierheim, Hundetrainer; "skandinavische Krimis" -> auch Nordic Noir, Schweden, Daenemark, Kommissar). '
     + 'ERFINDE KEINE Vorlieben, die der Nutzer nicht genannt hat (wenn er nichts von Arthouse sagt, gehoert Arthouse nicht hinein). Keine zu allgemeinen Woerter wie "Film" oder "Doku". '
+    + 'Verwende KEINE reinen Laender-, Regions- oder Staedtenamen als eigenstaendige suchbegriffe (NICHT "Deutschland", "USA", "Europa", "Bayern") — sie treffen jeden Nachrichtenbeitrag und sind wertlos. Uebersetze die geografische Angabe stattdessen in themenspezifische Begriffe. '
+    + 'Beispiel: "Ich mag Nachkriegsfilme aus Deutschland" -> {"suchbegriffe":["Nachkriegszeit","Truemmerfilm","Wirtschaftswunder","Heimkehrer","Besatzungszeit","Wiederaufbau","Stunde Null"],"genres":["drama","geschichte","kriegsfilm"],"ausschluesse":[]}. '
     + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. Auch hier: nur was aus den genannten Interessen folgt. '
     + 'ausschluesse: SEHR WICHTIG. Alles, was der Nutzer NICHT will. Erkenne Verneinungen wie "keine …", "kein …", "nichts mit …", "ohne …", "bitte nicht …", "… mag ich nicht", "ausser …". '
     + 'Erweitere Ausschluesse um enge Synonyme (z.B. "Schlagermusik" -> Schlager, Volksmusik; "nichts mit Kochen" -> Kochen, Kochshow, Rezepte, Backen). Leer NUR, wenn wirklich keine Verneinung im Text steht. '
