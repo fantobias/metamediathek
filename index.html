@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="test-instrumented-2026-08-13">
+<meta name="mm-build" content="test-fixes-2026-08-14">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -118,6 +118,7 @@
   .btn-sm { padding: 6px 14px; font-size: 12px; }
 
   .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .filter-toggle-btn { display: none; } /* nur mobil sichtbar (Media Query unten) */
   .filter-select {
     padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-size: 13px;
@@ -482,7 +483,11 @@
     .search-bar { flex-wrap: wrap; }
     .search-input { flex: 1 1 100%; font-size: 16px; min-height: 44px; } /* 16px verhindert iOS-Auto-Zoom */
     .search-bar .btn { flex: 1; min-height: 44px; }
-    .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    /* Mobil: Filterwand standardmäßig eingeklappt — 8 Dropdowns schoben die
+       Ergebnisse komplett unter den Fold (Nutzertest, beide Mobil-Personas) */
+    .filters { display: none; }
+    .filters.open { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .filter-toggle-btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin-bottom: 8px; }
     .filter-group { width: 100%; min-width: 0; }
     .filter-select { width: 100%; min-width: 0; min-height: 44px; font-size: 16px; }
     /* Chips: horizontal scrollen statt umbrechen */
@@ -575,6 +580,8 @@
     </div>
   </div>
 
+  <button type="button" class="btn btn-secondary filter-toggle-btn" id="filterToggleBtn"
+          onclick="const f=document.querySelector('.filters'); f.classList.toggle('open'); this.textContent = f.classList.contains('open') ? 'Filter ausblenden ▲' : 'Filter & Sortierung ▼';">Filter &amp; Sortierung ▼</button>
   <div class="filters">
     <div class="filter-group">
       <span class="filter-label">Sender</span>
@@ -625,7 +632,7 @@
     </div>
     <div class="filter-group">
       <span class="filter-label">Sortierung</span>
-      <select class="filter-select" id="filterSort" onchange="doSearch()">
+      <select class="filter-select" id="filterSort" onchange="onSortChange()">
         <option value="timestamp_desc">Neueste zuerst</option>
         <option value="timestamp_asc">Älteste zuerst</option>
         <option value="duration_desc">Längste zuerst</option>
@@ -635,10 +642,10 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Tonfassung</span>
+      <span class="filter-label">Barrierefreiheit / Fassung</span>
       <select class="filter-select" id="filterAudio" onchange="applySortAndFilter()">
         <option value="standard" selected>Alle (Fassungen gruppiert)</option>
-        <option value="ut">Nur mit Untertitel-Fassung</option>
+        <option value="ut">Mit Untertiteln</option>
         <option value="ad">Nur mit Audiodeskription</option>
         <option value="dgs">Nur mit Gebärdensprache</option>
         <option value="ov">Nur mit Originalton</option>
@@ -646,7 +653,7 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Min. Rating</span>
+      <span class="filter-label">TMDB-Bewertung (keine FSK!)</span>
       <select class="filter-select" id="filterRating" onchange="applySortAndFilter()">
         <option value="0">Alle</option>
         <option value="5">Ab 5.0 ⭐</option>
@@ -785,7 +792,10 @@ const API_MODE = location.protocol.startsWith('http') && !location.hostname.ends
 const TMDB_API_KEY = '2e8e36990eb20bc733fd845b092af8a8';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
-const CORS_PROXIES = ['', 'https://corsproxy.io/?', 'https://api.allorigins.win/raw?url='];
+// Öffentliche CORS-Proxys entfernt (Nutzertest: corsproxy.io antwortet 403,
+// allorigins braucht >20 s — beide verlängerten nur die gefühlte Ladezeit).
+// Fallback-Kette ist jetzt: eigener Proxy (2 Versuche) → direkt zu MVW.
+const CORS_PROXIES = [''];
 
 // Baut eine TMDB-URL: im API-Modus über den eigenen Proxy (Key bleibt Server-Sache)
 function tmdbApiUrl(path, query) {
@@ -1498,11 +1508,22 @@ async function applyTasteProfile() {
     return;
   }
 
-  // Im API-Modus: Freitext einmalig per KI in Begriffe/Genres/Ausschlüsse übersetzen
+  // Im API-Modus: Freitext einmalig per KI in Begriffe/Genres/Ausschlüsse übersetzen.
+  // Bei UNVERÄNDERTEM Text die gecachte Interpretation wiederverwenden — jede
+  // Neu-Interpretation kann anders ausfallen und machte das Feature unberechenbar
+  // (Nutzertest: zweite Anwendung desselben Profils ergab absurden Feed)
   let aiProfile = null;
   if (API_MODE) {
-    statusEl.textContent = '🤖 Profil wird interpretiert…';
-    aiProfile = await fetchProfilInterpretation(text);
+    try {
+      if (localStorage.getItem('metaMediathek_taste') === text) {
+        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI') || 'null');
+        if (cached && Array.isArray(cached.suchbegriffe) && cached.suchbegriffe.length > 0) aiProfile = cached;
+      }
+    } catch (e) {}
+    if (!aiProfile) {
+      statusEl.textContent = '🤖 Profil wird interpretiert…';
+      aiProfile = await fetchProfilInterpretation(text);
+    }
   }
   tasteKeywords = buildTasteProfile(text, aiProfile);
 
@@ -1881,8 +1902,12 @@ async function fetchOwnProxy(payload) {
 // dann die bisherige Fallback-Kette (direkt → corsproxy → allorigins)
 async function fetchMediathek(payload) {
   if (API_MODE) {
-    try { return await fetchOwnProxy(payload); }
-    catch (err) { console.warn('Eigener Proxy nicht erreichbar, nutze Fallback-Kette:', err.message); }
+    // Zwei Versuche über den eigenen Proxy — ein einzelner Timeout (MVW hat
+    // Lastspitzen) soll nicht sofort in die langsame Fallback-Kette führen
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try { return await fetchOwnProxy(payload); }
+      catch (err) { console.warn(`Eigener Proxy, Versuch ${attempt}/2 fehlgeschlagen:`, err.message); }
+    }
   }
   if (activeCorsProxy !== '') {
     try { return await fetchWithProxy(activeCorsProxy, payload); }
@@ -1960,7 +1985,10 @@ async function enrichWithTMDB_background(results) {
       item._tmdb = tmdb;
       // Senderbeschreibung (og:description) nachladen, wenn TMDB keine
       // Inhaltsangabe liefert — mehr Text für Anzeige und Taste-Matching
-      if (API_MODE && !(tmdb && tmdb.overview) && item._senderDesc === undefined && safeUrl(item.url_website)) {
+      // Senderbeschreibungen nur bei überschaubaren Ergebnismengen nachladen —
+      // bei 200 Treffern erzeugte das Hunderte langsame /api/meta-Aufrufe
+      // und war der größte Einzelposten der Fehler-/Latenzflut (Nutzertest)
+      if (API_MODE && total <= 60 && !(tmdb && tmdb.overview) && item._senderDesc === undefined && safeUrl(item.url_website)) {
         const meta = await fetchJsonSafe('/api/meta?url=' + encodeURIComponent(safeUrl(item.url_website)));
         if (ctrl.cancelled) return;
         item._senderDesc = (meta && typeof meta.description === 'string') ? meta.description : null;
@@ -2232,6 +2260,10 @@ function applySortAndFilter() {
     filtered = filtered.filter(r => {
       const inVariants = r._variants && r._variants.some(v => v.variant === audioFilter);
       if (inVariants) r._activeVariant = audioFilter;
+      // UT-Filter: zusätzlich das MVW-Untertitel-Flag (url_subtitle) akzeptieren —
+      // die Titel-Marker "(mit Untertiteln)" sind nachweislich unvollständig und
+      // unterschlugen sonst real untertitelte Sendungen (Nutzertest, Persona Sabine)
+      if (audioFilter === 'ut' && r.url_subtitle) return true;
       return inVariants || audioOf(r) === audioFilter;
     });
   }
@@ -2278,7 +2310,9 @@ function applySortAndFilter() {
   // Update UI counts
   const filteredInfo = document.getElementById('filteredInfo');
   if (filtered.length !== enrichedResults.length) {
-    filteredInfo.innerHTML = `<strong>${filtered.length}</strong> angezeigt`;
+    // Klar benennen, WORAUF sich die Zahl bezieht — der Widerspruch
+    // "1.708 Treffer, 0 Karten" war der häufigste Verwirrungs-Befund im Nutzertest
+    filteredInfo.innerHTML = `davon auf dieser Seite sichtbar: <strong>${filtered.length}</strong> von ${enrichedResults.length} (Filter aktiv)`;
   } else {
     filteredInfo.innerHTML = '';
   }
@@ -2289,6 +2323,7 @@ function applySortAndFilter() {
   // gespeicherter Index sonst auf den falschen Film zeigen
   closeBookmarkDropdown();
 
+  unveilGrid();
   if (filtered.length === 0) {
     displayedResults = [];
     document.getElementById('resultsGrid').innerHTML = '';
@@ -2307,6 +2342,7 @@ function applySortAndFilter() {
   displayedResults = filtered;
   // Ein einziges innerHTML-Assignment für das ganze Grid → 1 Reflow pro Render
   document.getElementById('resultsGrid').innerHTML = filtered.map((r, i) => renderCard(r, i)).join('');
+  unveilGrid();
   AppEvents.emit('results:rendered', { count: filtered.length });
 }
 
@@ -2323,11 +2359,26 @@ function rescoreAndRender() {
 function showLoading(subText) {
   document.getElementById('loadingState').style.display = 'flex';
   document.getElementById('loadingSub').textContent = subText;
-  document.getElementById('resultsGrid').innerHTML = '';
+  const grid = document.getElementById('resultsGrid');
+  // Alte Ergebnisse während des Nachladens ausgegraut stehen lassen statt
+  // hart zu leeren — die "plötzlich leere Seite" war ein Kern-Befund des
+  // Nutzertests (gefühlte Latenz, wirkt wie Absturz/Datenverlust)
+  if (grid.children.length > 0) {
+    grid.style.opacity = '0.35';
+    grid.style.pointerEvents = 'none';
+  } else {
+    grid.innerHTML = '';
+  }
   document.getElementById('emptyState').style.display = 'none';
-  document.getElementById('pagination').style.display = 'none';
   document.getElementById('tmdbStatus').textContent = '';
   closeBookmarkDropdown();
+}
+
+// Grid nach Abschluss eines Ladevorgangs wieder aktivieren
+function unveilGrid() {
+  const grid = document.getElementById('resultsGrid');
+  grid.style.opacity = '1';
+  grid.style.pointerEvents = '';
 }
 
 function showEmpty(msg) {
@@ -2335,18 +2386,24 @@ function showEmpty(msg) {
   el.querySelector('div:last-child').textContent =
     msg || 'Keine Ergebnisse gefunden. Versuche eine andere Suche oder passe die Filter an.';
   el.style.display = 'block';
+  document.getElementById('resultsGrid').innerHTML = '';
+  unveilGrid();
 }
 
 function updatePagination() {
   const size = parseInt(document.getElementById('filterSize').value);
   const pag = document.getElementById('pagination');
-  if (totalResults > size) {
+  if (totalResults > size || currentOffset > 0) {
     pag.style.display = 'flex';
     const page = Math.floor(currentOffset / size) + 1;
+    const capped = totalResults >= 10000; // MVW-Deckel: "von 50" wäre Scheingenauigkeit
     const totalPages = Math.ceil(totalResults / size);
-    document.getElementById('pageInfo').textContent = `Seite ${page} von ${totalPages}`;
+    document.getElementById('pageInfo').textContent = capped ? `Seite ${page}` : `Seite ${page} von ${totalPages}`;
     document.getElementById('btnPrev').disabled = currentOffset === 0;
-    document.getElementById('btnNext').disabled = currentOffset + size >= totalResults;
+    // "Weiter" nur, wenn der Server eine volle Seite geliefert hat — sonst gibt
+    // es keine Folgeseite, egal was die (gedeckelte) Trefferzahl behauptet
+    document.getElementById('btnNext').disabled =
+      (lastResults.length < size) || (!capped && currentOffset + size >= totalResults);
   } else {
     pag.style.display = 'none';
   }
@@ -2415,7 +2472,10 @@ async function doSearch(resetOffset = true, keepChips = false) {
 
   lastResults = data.result.results;
   totalResults = data.result.queryInfo ? data.result.queryInfo.totalResults : lastResults.length;
-  document.getElementById('resultCountTotal').textContent = totalResults.toLocaleString('de-DE');
+  // MVW deckelt die Trefferzahl bei 10.000 — ehrlich als "10.000+" ausweisen,
+  // sonst wirkt die Zahl wie ein eingefrorener Platzhalter (Nutzertest-Befund)
+  document.getElementById('resultCountTotal').textContent =
+    totalResults >= 10000 ? '10.000+' : totalResults.toLocaleString('de-DE');
 
   if (lastResults.length === 0) {
     enrichedResults = [];
@@ -2440,6 +2500,18 @@ async function doSearch(resetOffset = true, keepChips = false) {
 
   // Then enrich with TMDB in background (cards update progressively)
   enrichWithTMDB_background(enrichedResults);
+}
+
+// Sortierwechsel: Client-Sortierungen (Rating, Geschmack) brauchen keinen neuen
+// Server-Abruf — die Daten liegen schon da. Spart 10-30 s Wartezeit (Nutzertest-Befund).
+function onSortChange() {
+  const v = document.getElementById('filterSort').value;
+  if ((v === 'rating_desc' || v === 'taste_desc') && enrichedResults.length > 0) {
+    applySortAndFilter();
+    syncStateToURL();
+  } else {
+    doSearch();
+  }
 }
 
 function nextPage() {
@@ -3043,8 +3115,16 @@ updateWlCount();
 // Geteilte Links: Filterzustand aus URL-Parametern wiederherstellen
 restoreStateFromURL();
 
-// Initial load
-doSearch();
+// Initial load: Mit gespeichertem Geschmacksprofil direkt den Empfehlungs-Feed
+// laden — vorher ging die Personalisierung nach jedem Reload verloren
+// (Nutzertest-Befund). Geteilte Links (?q=…) haben weiter Vorrang.
+if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.length > 0
+    && !new URLSearchParams(location.search).get('q')) {
+  document.getElementById('filterSort').value = 'taste_desc';
+  profileFeedSearch();
+} else {
+  doSearch();
+}
 </script>
 
 <!-- ===================== MetaMediathek Telemetrie & Feedback (test-Branch) ===================== -->
@@ -3197,7 +3277,10 @@ doSearch();
     '#mmFbRow button{border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;}' +
     '#mmFbSend{background:var(--orange,#ff7a00);color:#fff;font-weight:600;}' +
     '#mmFbCancel{background:rgba(255,255,255,.12);color:inherit;}' +
-    '#mmFbNote{font-size:11px;opacity:.6;margin:0 0 10px;}';
+    '#mmFbNote{font-size:11px;opacity:.6;margin:0 0 10px;}' +
+    /* Platz für den Button freihalten, damit er Pagination/Inhalte nicht verdeckt */
+    'body{padding-bottom:64px;}' +
+    '@media(max-width:640px){#mmFbBtn{padding:7px 11px;font-size:12px;border-radius:16px;}}';
   document.head.appendChild(css);
 
   var btn = document.createElement('button');
