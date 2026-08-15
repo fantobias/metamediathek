@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-15.1">
+<meta name="mm-build" content="2026-08-15.2">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -252,6 +252,8 @@
   .card-meta-item { display: flex; align-items: center; gap: 3px; }
   .card-actions { display: flex; gap: 8px; padding: 0 14px 14px; }
   .card-actions .btn { flex: 1; text-align: center; font-size: 12px; padding: 7px; text-decoration: none; }
+  /* Direktlink: bewusst kleiner als "Ansehen" — Power-Funktion, nicht Hauptweg */
+  .card-actions .btn-direct { flex: 0 0 auto; font-size: 11px; padding: 7px 10px; color: var(--text-dim); }
 
   /* Fassungs-Chips (Tonfassungen gruppiert auf einer Kachel) */
   .fassungen {
@@ -1874,7 +1876,7 @@ function isLikelyExpired(item) {
 function expiryWarning(item) {
   if (!item.timestamp) return '';
   const ageDays = (Date.now()/1000 - item.timestamp) / 86400;
-  if (ageDays > EXPIRY_OFFLINE_DAYS) return '⚠ Wahrscheinlich offline';
+  if (ageDays > EXPIRY_OFFLINE_DAYS) return '⚠ Seite wahrscheinlich offline — probiere den Direktlink';
   if (ageDays > EXPIRY_WARN_DAYS) return '⚠ Möglicherweise offline';
   return '';
 }
@@ -2136,7 +2138,8 @@ function renderCard(item, idx) {
   // Links zeigen auf die gewählte Fassung der Gruppe
   const activeItem = getActiveVariantItem(item);
   const urlWebsite = safeUrl(activeItem.url_website);
-  const urlVideo = safeUrl(activeItem.url_video);
+  // Direktlink: HD-Datei bevorzugen — url_video ist bei MVW meist nur Mittelqualitaet
+  const urlVideo = safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video);
   const audioVariant = item._audio || (item._audio = detectAudioVariant(item));
 
   return `
@@ -2186,10 +2189,10 @@ function renderCard(item, idx) {
       </div>` : '')}
       <div class="card-actions" onclick="event.stopPropagation()">
         ${urlWebsite
-          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary">▶ Ansehen</a>`
+          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ Ansehen</a>`
           : ''}
         ${urlVideo
-          ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary">⬇ Stream</a>`
+          ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary btn-direct" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">Direktlink</a>`
           : ''}
         <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
           📌
@@ -2312,9 +2315,9 @@ function showDetail(idx) {
     ${renderTasteExplain(item)}
     <div class="actions">
       ${safeUrl(activeItem.url_website)
-        ? `<a href="${escAttr(safeUrl(activeItem.url_website))}" target="_blank" rel="noopener" class="btn btn-primary">▶ In Mediathek streamen</a>` : ''}
-      ${safeUrl(activeItem.url_video)
-        ? `<a href="${escAttr(safeUrl(activeItem.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary">⬇ Direkter Video-Link</a>` : ''}
+        ? `<a href="${escAttr(safeUrl(activeItem.url_website))}" target="_blank" rel="noopener" class="btn btn-primary" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ In der Mediathek ansehen</a>` : ''}
+      ${(safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video))
+        ? `<a href="${escAttr(safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">⬇ Direktlink (Download/VLC)</a>` : ''}
       ${safeUrl(activeItem.url_subtitle)
         ? `<a href="${escAttr(safeUrl(activeItem.url_subtitle))}" target="_blank" rel="noopener" class="btn btn-secondary">💬 Untertitel</a>` : ''}
       ${tmdb ? `<a href="https://www.themoviedb.org/${tmdb.tmdb_type || 'movie'}/${encodeURIComponent(tmdb.tmdb_id)}" target="_blank" rel="noopener" class="tmdb-link">↗ Auf TMDB ansehen</a>` : ''}
@@ -3444,7 +3447,7 @@ if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.leng
       ev('card_open', { title: titleEl ? titleEl.textContent.slice(0, 80) : '' });
       return;
     }
-    var link = e.target.closest && e.target.closest('a.btn-primary');
+    var link = e.target.closest && e.target.closest('a.btn');
     if (link) { ev('play_click', { href: (link.href || '').slice(0, 200) }); return; }
     var chip = e.target.closest && e.target.closest('#quickChips .chip');
     if (chip) { ev('chip_click', { label: chip.textContent.slice(0, 40) }); return; }
