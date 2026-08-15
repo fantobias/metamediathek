@@ -2391,7 +2391,10 @@ function applySortAndFilter() {
   // Sport- und Magazinbeitraege ("WM-Thriller", "Sturz-Drama", Kulturzeit ueber
   // Sci-Fi-Ausstellungen) — bei diesen Chips News/Magazin/Sport ausblenden
   if (activeQuickFilter && GENRE_CHIP_TERMS.includes(activeQuickFilter)) {
-    filtered = filtered.filter(r => !isNewsMagazineTopic(r.topic) && !isSportTopic(r.topic));
+    // Zusatzsieb: Regionaljournale/Magazine beginnen oft mit dem Sendernamen
+    // ("MDR THUERINGEN JOURNAL") — der Anker in isNewsMagazineTopic greift dann nicht
+    const regionalNoise = /journal|umschau|\bmagazin\b|aktuell\b|nachrichten/i;
+    filtered = filtered.filter(r => !isNewsMagazineTopic(r.topic) && !isSportTopic(r.topic) && !regionalNoise.test(r.topic || ''));
   }
 
   // Client-side text filter (for quick-chips and re-filtering without API call)
