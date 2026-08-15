@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="test-fixes-2026-08-14">
+<meta name="mm-build" content="2026-08-15.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -664,7 +664,7 @@
     </div>
     <div class="filter-group">
       <span class="filter-label">Aktualität</span>
-      <select class="filter-select" id="filterAge" onchange="applySortAndFilter()">
+      <select class="filter-select" id="filterAge" onchange="onAgeChange()">
         <option value="7">Letzte 7 Tage</option>
         <option value="30">Letzte 30 Tage</option>
         <option value="90">Letzte 3 Monate</option>
@@ -686,20 +686,20 @@
   </div>
 
   <div class="chips" id="quickChips">
-    <span class="chip" onclick="quickSearch('Spielfilm')">Spielfilme</span>
-    <span class="chip" onclick="quickSearch('Dokumentarfilm')">Dokumentarfilme</span>
-    <span class="chip" onclick="quickSearch('Krimi')">Krimis</span>
-    <span class="chip" onclick="quickSearch('Tatort')">Tatort</span>
-    <span class="chip" onclick="quickSearch('Polizeiruf')">Polizeiruf 110</span>
-    <span class="chip" onclick="quickSearch('Thriller')">Thriller</span>
-    <span class="chip" onclick="quickSearch('Drama')">Drama</span>
-    <span class="chip" onclick="quickSearch('Komödie')">Komödien</span>
-    <span class="chip" onclick="quickSearch('Dokumentation')">Dokus</span>
-    <span class="chip" onclick="quickSearch('Natur')">Natur</span>
-    <span class="chip" onclick="quickSearch('Geschichte')">Geschichte</span>
-    <span class="chip" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
-    <span class="chip" onclick="quickSearch('Liebe')">Liebesfilme</span>
-    <span class="chip" onclick="quickSearch('Kinderfilm')">Kinderfilme</span>
+    <span class="chip" data-term="Spielfilm" onclick="quickSearch('Spielfilm')">Spielfilme</span>
+    <span class="chip" data-term="Dokumentarfilm" onclick="quickSearch('Dokumentarfilm')">Dokumentarfilme</span>
+    <span class="chip" data-term="Krimi" onclick="quickSearch('Krimi')">Krimis</span>
+    <span class="chip" data-term="Tatort" onclick="quickSearch('Tatort')">Tatort</span>
+    <span class="chip" data-term="Polizeiruf" onclick="quickSearch('Polizeiruf')">Polizeiruf 110</span>
+    <span class="chip" data-term="Thriller" onclick="quickSearch('Thriller')">Thriller</span>
+    <span class="chip" data-term="Drama" onclick="quickSearch('Drama')">Drama</span>
+    <span class="chip" data-term="Komödie" onclick="quickSearch('Komödie')">Komödien</span>
+    <span class="chip" data-term="Dokumentation" onclick="quickSearch('Dokumentation')">Dokus</span>
+    <span class="chip" data-term="Natur" onclick="quickSearch('Natur')">Natur</span>
+    <span class="chip" data-term="Geschichte" onclick="quickSearch('Geschichte')">Geschichte</span>
+    <span class="chip" data-term="Science Fiction" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
+    <span class="chip" data-term="Liebe" onclick="quickSearch('Liebe')">Liebesfilme</span>
+    <span class="chip" data-term="Kinderfilm" onclick="quickSearch('Kinderfilm')">Kinderfilme</span>
   </div>
 </div>
 
@@ -1567,7 +1567,15 @@ function profileStatusText(text, p, aiUsed) {
   return `✓ Profil aktiv: „${quote}“${aiUsed ? ' · KI-erweitert' : ''} (${inhalt} · ${exCount} Ausschlüsse)`;
 }
 
+// Feed-Ansicht: nur hier blendet der Geschmacks-Filter Ergebnisse aus.
+// Suchen/Chips setzen das Flag zurück (dort wird nur sortiert).
+let feedView = false;
+// Generation der Profil-Anwendung: Löschen/Zurücksetzen während die KI noch
+// interpretiert, ließ das Profil vorher wieder "auferstehen" (Interplay-Test)
+let tasteSeq = 0;
+
 async function applyTasteProfile() {
+  const tSeq = ++tasteSeq;
   const text = document.getElementById('tasteProfile').value;
   const statusEl = document.getElementById('tasteStatus');
   if (!text || !text.trim()) {
@@ -1583,21 +1591,23 @@ async function applyTasteProfile() {
   if (API_MODE) {
     try {
       if (localStorage.getItem('metaMediathek_taste') === text) {
-        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI3') || 'null');
+        const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteAI4') || 'null');
         if (cached && Array.isArray(cached.suchbegriffe) && cached.suchbegriffe.length > 0) aiProfile = cached;
       }
     } catch (e) {}
     if (!aiProfile) {
       statusEl.textContent = '🤖 Profil wird interpretiert…';
       aiProfile = await fetchProfilInterpretation(text);
+      if (tSeq !== tasteSeq) return; // Profil wurde währenddessen gelöscht/zurückgesetzt
     }
   }
+  if (tSeq !== tasteSeq) return;
   tasteKeywords = buildTasteProfile(text, aiProfile);
 
   statusEl.textContent = profileStatusText(text, tasteKeywords, !!aiProfile);
   try {
     localStorage.setItem('metaMediathek_taste', text);
-    localStorage.setItem('metaMediathek_tasteAI3', aiProfile ? JSON.stringify(aiProfile) : '');
+    localStorage.setItem('metaMediathek_tasteAI4', aiProfile ? JSON.stringify(aiProfile) : '');
   } catch(e) {}
 
   document.getElementById('tastePanel').classList.remove('active');
@@ -1619,7 +1629,8 @@ async function profileFeedSearch() {
   const seq = ++searchSeq;
   document.getElementById('searchInput').value = '';
   activeQuickFilter = '';
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  prevSearchText = '';
+  updateChipHighlight();
   showLoading('Empfehlungen aus dem Gesamtbestand zusammenstellen…');
   syncStateToURL();
 
@@ -1655,6 +1666,8 @@ async function profileFeedSearch() {
   totalResults = merged.length;
   document.getElementById('resultCountTotal').textContent = totalResults.toLocaleString('de-DE');
 
+  feedView = true; // ab hier gilt die strenge Feed-Ansicht
+
   if (merged.length === 0) {
     enrichedResults = [];
     displayedResults = [];
@@ -1671,13 +1684,16 @@ async function profileFeedSearch() {
 }
 
 function clearTasteProfile() {
+  tasteSeq++;   // laufende Interpretation verwerfen
+  searchSeq++;  // laufenden Empfehlungs-Feed verwerfen
+  feedView = false;
   document.getElementById('tasteProfile').value = '';
   tasteKeywords = null;
   document.getElementById('tasteStatus').textContent = '';
   document.getElementById('profileToggle').classList.remove('active');
   try {
     localStorage.removeItem('metaMediathek_taste');
-    localStorage.removeItem('metaMediathek_tasteAI3');
+    localStorage.removeItem('metaMediathek_tasteAI4');
   } catch(e) {}
   // Reset sort if it was on taste
   if (document.getElementById('filterSort').value === 'taste_desc') {
@@ -1920,7 +1936,12 @@ function buildQuery() {
     ? ['timestamp', 'desc'] : sortVal.split('_');
 
   const queries = [];
-  if (query) queries.push({ fields: ['title','topic'], query });
+  if (query) queries.push({
+    // Serien-Chips (Tatort, Polizeiruf) nur im Sendungs-Thema suchen —
+    // Volltext spülte "Rote Rosen"-Folgen und Regionalmagazine nach oben
+    fields: (activeQuickFilter === query && TOPIC_CHIP_TERMS.includes(query)) ? ['topic'] : ['title','topic'],
+    query
+  });
   if (channel) queries.push({ fields: ['channel'], query: channel });
 
   const payload = {
@@ -2317,11 +2338,15 @@ function applySortAndFilter() {
 
   let filtered = [...enrichedResults];
 
-  // Age/freshness filter
+  // Age/freshness filter — Anzahl der Alters-Opfer merken, um sie unten als
+  // Ein-Klick-Angebot ("N ältere Treffer anzeigen") auszuweisen
+  let ageHidden = 0;
   const maxAgeDays = parseInt(document.getElementById('filterAge').value);
   if (maxAgeDays > 0) {
     const cutoff = Date.now()/1000 - maxAgeDays * 86400;
+    const before = filtered.length;
     filtered = filtered.filter(r => r.timestamp >= cutoff);
+    ageHidden = before - filtered.length;
   }
 
   // Tonfassungs-Filter: Fassungen sind gruppiert — die Standardansicht zeigt
@@ -2362,7 +2387,10 @@ function applySortAndFilter() {
   // mindestens leicht zum Profil passen — sonst folgt auf die Treffer
   // eine lange Liste völlig unpassender Einträge. Sortierung wechseln
   // (z.B. "Neueste zuerst") zeigt wieder alles.
-  if (tasteKeywords && sortVal === 'taste_desc') {
+  // NUR im Empfehlungs-Feed ausblenden — bei expliziter Suche/Chip wird nach
+  // Match sortiert, aber nichts versteckt (Interplay-Test: Komödien-Profil +
+  // Komödien-Chip zeigte 0 von 149 Treffern)
+  if (tasteKeywords && sortVal === 'taste_desc' && feedView) {
     filtered = filtered.filter(r =>
       (r._tasteScore || 0) >= TASTE_MIN_SCORE
       // Nur substanzielle Inhalte: keine News-Schnipsel und Magazin-Formate —
@@ -2384,7 +2412,10 @@ function applySortAndFilter() {
   if (filtered.length !== enrichedResults.length) {
     // Klar benennen, WORAUF sich die Zahl bezieht — der Widerspruch
     // "1.708 Treffer, 0 Karten" war der häufigste Verwirrungs-Befund im Nutzertest
-    filteredInfo.innerHTML = `davon auf dieser Seite sichtbar: <strong>${filtered.length}</strong> von ${enrichedResults.length} (Filter aktiv)`;
+    const olderLink = ageHidden > 0
+      ? ` · <a href="javascript:void(0)" onclick="showOlderResults()" style="color:var(--accent)">${ageHidden} ältere Treffer anzeigen</a>`
+      : '';
+    filteredInfo.innerHTML = `davon auf dieser Seite sichtbar: <strong>${filtered.length}</strong> von ${enrichedResults.length} (Filter aktiv)${olderLink}`;
   } else {
     filteredInfo.innerHTML = '';
   }
@@ -2401,9 +2432,11 @@ function applySortAndFilter() {
     document.getElementById('resultsGrid').innerHTML = '';
     // Unterscheidung: keine Server-Ergebnisse vs. alles weggefiltert
     showEmpty(enrichedResults.length > 0
-      ? (tasteKeywords && sortVal === 'taste_desc'
+      ? (tasteKeywords && sortVal === 'taste_desc' && feedView
         ? 'Kein Ergebnis passt zu deinem Geschmacksprofil. Formuliere das Profil breiter — oder wechsle die Sortierung (z.B. "Neueste zuerst"), um alle Ergebnisse zu sehen.'
-        : 'Alle Ergebnisse wurden durch deine Filter ausgeblendet. Lockere Rating-, Tonfassungs- oder Aktualitäts-Filter.')
+        : (ageHidden > 0
+          ? `Alle ${ageHidden} Treffer sind älter als der Aktualitäts-Filter erlaubt — oben "ältere Treffer anzeigen" klicken oder Aktualität auf "Beliebig" stellen.`
+          : 'Alle Ergebnisse wurden durch deine Filter ausgeblendet. Lockere Rating-, Tonfassungs- oder Aktualitäts-Filter.'))
       : undefined);
     // Pagination NICHT verstecken: auf anderen Seiten kann es Treffer geben
     return;
@@ -2519,11 +2552,16 @@ function restoreStateFromURL() {
 
 async function doSearch(resetOffset = true, keepChips = false) {
   if (resetOffset) currentOffset = 0;
+  feedView = false; // jede echte Suche verlässt die Feed-Ansicht
 
   if (!keepChips) {
-    activeQuickFilter = '';  // sonst bleibt der Chip-Zustand inkonsistent zur UI
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    // Chip-Zustand bleibt erhalten, solange die Suchanfrage noch der Chip-Term
+    // ist (Blättern, Filter- und Sortierwechsel) — vorher verschwand die
+    // Markierung bei jedem dieser Wege, der Suchbegriff aber nicht
+    const curQ = document.getElementById('searchInput').value.trim();
+    if (!(activeQuickFilter && curQ === activeQuickFilter)) activeQuickFilter = '';
   }
+  updateChipHighlight();
 
   // Race-Schutz: jede Suche bekommt eine Generation. Antworten älterer
   // Suchen (langsamer Proxy) dürfen den aktuellen Zustand nicht überschreiben.
@@ -2578,6 +2616,9 @@ async function doSearch(resetOffset = true, keepChips = false) {
 // Server-Abruf — die Daten liegen schon da. Spart 10-30 s Wartezeit (Nutzertest-Befund).
 function onSortChange() {
   const v = document.getElementById('filterSort').value;
+  // "Älteste zuerst" + Aktualität "Letztes Jahr" ergäbe IMMER eine leere Seite
+  // (die ältesten Einträge des Bestands sind per Definition älter als 1 Jahr)
+  if (v === 'timestamp_asc') maybeRelaxAgeFilter();
   if ((v === 'rating_desc' || v === 'taste_desc') && enrichedResults.length > 0) {
     applySortAndFilter();
     syncStateToURL();
@@ -2601,22 +2642,68 @@ function prevPage() {
 }
 
 let activeQuickFilter = '';
+// Nutzertext, den ein Chip überschrieben hat — wird bei Chip-Abwahl wiederhergestellt
+// (Interplay-Test: "sherlock" tippen, Chip klicken, Chip abwählen → Text war weg)
+let prevSearchText = '';
+// Chip-Terme aus dem Markup (data-term) — Quelle der Wahrheit für Markierung & Erkennung
+const CHIP_TERMS = [...document.querySelectorAll('#quickChips .chip')].map(c => c.dataset.term);
+// Serien-Chips suchen nur im Sendungs-Thema (topic) — Volltext lieferte
+// "Rote Rosen: Wenn der Tatort anklopft" & Co. (Interplay-Test)
+const TOPIC_CHIP_TERMS = ['Tatort', 'Polizeiruf'];
+
+// Chip-Markierung IMMER aus activeQuickFilter ableiten — der frühere
+// textContent-Vergleich ließ "Dokus" und "Sci-Fi" nie aufleuchten
+function updateChipHighlight() {
+  document.querySelectorAll('#quickChips .chip').forEach(c =>
+    c.classList.toggle('active', !!activeQuickFilter && c.dataset.term === activeQuickFilter));
+}
+
+// Aktualitäts-Filter: Default "Letztes Jahr" ist gut für die Startseite,
+// versteckte aber bei expliziten Suchen das Archiv (Komödien-Chip: 123 von 149
+// Treffern unsichtbar). Solange der Nutzer den Filter nicht selbst angefasst
+// hat, stellt eine explizite Suche ihn auf "Beliebig".
+let ageTouched = false;
+function onAgeChange() { ageTouched = true; applySortAndFilter(); }
+function maybeRelaxAgeFilter() {
+  const el = document.getElementById('filterAge');
+  if (!ageTouched && el.value === '365') el.value = '0';
+}
+// Link "N ältere Treffer anzeigen" in der Filter-Infozeile
+function showOlderResults() {
+  ageTouched = true;
+  document.getElementById('filterAge').value = '0';
+  applySortAndFilter();
+}
 
 function quickSearch(term) {
-  // If clicking same chip again, deactivate
+  const input = document.getElementById('searchInput');
+  // Gleicher Chip erneut = abwählen
   if (activeQuickFilter === term) {
     activeQuickFilter = '';
-    document.getElementById('searchInput').value = '';
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    doSearch();
+    updateChipHighlight();
+    if (prevSearchText) {
+      // Vom Chip überschriebenen Nutzertext wiederherstellen und erneut suchen
+      input.value = prevSearchText;
+      prevSearchText = '';
+      doCombinedSearch();
+    } else if (tasteKeywords && document.getElementById('filterSort').value === 'taste_desc') {
+      // Mit aktivem Profil in der Match-Ansicht: zurück zum Empfehlungs-Feed
+      // (vorher landete man auf einer taste-gefilterten Startsuche)
+      input.value = '';
+      profileFeedSearch();
+    } else {
+      input.value = '';
+      doSearch();
+    }
     return;
   }
 
+  const cur = input.value.trim();
+  if (cur && cur !== term && !CHIP_TERMS.includes(cur)) prevSearchText = cur;
   activeQuickFilter = term;
-  document.getElementById('searchInput').value = term;
-  document.querySelectorAll('.chip').forEach(c => {
-    c.classList.toggle('active', c.textContent.toLowerCase().includes(term.toLowerCase()));
-  });
+  input.value = term;
+  updateChipHighlight();
+  maybeRelaxAgeFilter();
 
   // Always do a fresh API search – the cached enrichedResults are from a
   // different query, so client-side text filtering would miss results.
@@ -2639,6 +2726,8 @@ function goHome() {
 }
 
 function resetAll() {
+  tasteSeq++; // eine noch laufende Profil-Interpretation darf danach nichts mehr ändern
+  prevSearchText = '';
   document.getElementById('searchInput').value = '';
   document.getElementById('filterChannel').value = '';
   document.getElementById('filterDurationMin').value = '0';
@@ -2655,8 +2744,12 @@ function resetAll() {
 
 // ─── Combined Search (Title + Person in parallel) ───
 function handleSearch() {
-  activeQuickFilter = '';
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  const q = document.getElementById('searchInput').value.trim();
+  // Wer den Chip-Term tippt, bekommt denselben Zustand wie per Chip-Klick
+  activeQuickFilter = CHIP_TERMS.includes(q) ? q : '';
+  prevSearchText = '';
+  updateChipHighlight();
+  if (q) maybeRelaxAgeFilter();
   doCombinedSearch();
 }
 
@@ -2665,6 +2758,7 @@ async function doCombinedSearch() {
   const query = document.getElementById('searchInput').value.trim();
   if (!query) { doSearch(); return; }
 
+  feedView = false;
   currentOffset = 0;
   const seq = ++searchSeq; // Race-Schutz (siehe doSearch)
 
@@ -3171,7 +3265,7 @@ try {
   if (typeof saved === 'string' && saved.trim()) {
     document.getElementById('tasteProfile').value = saved;
     let savedAI = null;
-    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI3') || 'null'); } catch(e) {}
+    try { savedAI = JSON.parse(localStorage.getItem('metaMediathek_tasteAI4') || 'null'); } catch(e) {}
     tasteKeywords = buildTasteProfile(saved, savedAI);
     if (tasteKeywords) {
       document.getElementById('tasteStatus').textContent = profileStatusText(saved, tasteKeywords, !!savedAI);
@@ -3199,6 +3293,14 @@ updateWlCount();
 
 // Geteilte Links: Filterzustand aus URL-Parametern wiederherstellen
 restoreStateFromURL();
+// Entspricht die restaurierte Suche einem Chip-Term, Chip wieder markieren
+try {
+  const q0 = document.getElementById('searchInput').value.trim();
+  if (CHIP_TERMS.includes(q0)) { activeQuickFilter = q0; updateChipHighlight(); }
+  // Geteilte Such-Links ohne explizites age: Archiv nicht verstecken
+  const p0 = new URLSearchParams(location.search);
+  if (p0.get('q') && !p0.has('age')) document.getElementById('filterAge').value = '0';
+} catch (e) {}
 
 // Initial load: Mit gespeichertem Geschmacksprofil direkt den Empfehlungs-Feed
 // laden — vorher ging die Personalisierung nach jedem Reload verloren
@@ -3243,8 +3345,12 @@ if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.leng
     if (buffer.length > MAX_BUFFER) buffer.splice(0, buffer.length - MAX_BUFFER);
   }
 
+  // App-Version (mm-build-Meta) an JEDE Einsendung haengen — Rueckmeldungen
+  // sollen pro Version aggregiert auswertbar sein (Tobi, 15.08.)
+  var BUILD = (document.querySelector('meta[name="mm-build"]') || {}).content || '';
   function send(payload, useBeacon) {
     try {
+      payload.build = BUILD;
       var body = JSON.stringify(payload);
       if (useBeacon && navigator.sendBeacon) {
         navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'application/json' }));
@@ -3340,7 +3446,7 @@ if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.leng
     }
     var link = e.target.closest && e.target.closest('a.btn-primary');
     if (link) { ev('play_click', { href: (link.href || '').slice(0, 200) }); return; }
-    var chip = e.target.closest && e.target.closest('#quickChips .f-chip');
+    var chip = e.target.closest && e.target.closest('#quickChips .chip');
     if (chip) { ev('chip_click', { label: chip.textContent.slice(0, 40) }); return; }
     if (e.target.closest && e.target.closest('#watchlistToggle')) { ev('watchlist_toggle', {}); return; }
     if (e.target.closest && e.target.closest('#profileToggle')) { ev('profile_toggle', {}); return; }

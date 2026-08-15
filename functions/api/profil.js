@@ -44,9 +44,11 @@ export async function onRequestPost(context) {
     + 'name = kurze Bezeichnung des Interesses. begriffe = 2-6 deutsche Suchbegriffe je Gruppe: das Wort selbst plus eng verwandte Konzepte und Synonyme '
     + '(z.B. Interesse "Katzen" -> begriffe ["Katze","Katzen","Kater","Stubentiger"]; "skandinavische Krimis" -> ["Nordic Noir","Skandinavien","Schweden","Kommissar"]). '
     + 'ERFINDE KEINE Interessen, die der Nutzer nicht genannt hat. Keine zu allgemeinen Woerter wie "Film" oder "Doku". '
+    + 'VERNEINTE Interessen ("keine …", "ohne …", "mag ich nicht") gehoeren AUSSCHLIESSLICH in ausschluesse und duerfen NIEMALS eine themen-Gruppe bilden. '
     + 'Verwende KEINE reinen Laender-, Regions- oder Staedtenamen als begriffe (NICHT "Deutschland", "USA", "Europa", "Bayern") — sie treffen jeden Nachrichtenbeitrag. Uebersetze Geografie in themenspezifische Begriffe. '
     + 'Beispiel 1: "Katzen, Mord, schwarz-weiss" -> {"themen":[{"name":"Katzen","begriffe":["Katze","Katzen","Kater","Stubentiger"]},{"name":"Mord/Krimi","begriffe":["Mord","Krimi","Kommissar","Mordfall"]},{"name":"Schwarzweiss","begriffe":["schwarzweiss","schwarz-weiss","Filmklassiker"]}],"genres":["krimi"],"ausschluesse":[]}. '
     + 'Beispiel 2: "Ich mag Nachkriegsfilme aus Deutschland" -> {"themen":[{"name":"Nachkriegszeit","begriffe":["Nachkriegszeit","Truemmerfilm","Wirtschaftswunder","Heimkehrer","Besatzungszeit","Stunde Null"]}],"genres":["drama","geschichte","kriegsfilm"],"ausschluesse":[]}. '
+    + 'Beispiel 3: "Ich mag Dokus, aber bitte keinen Schlager" -> {"themen":[{"name":"Dokumentationen","begriffe":["Doku","Dokumentation","Reportage"]}],"genres":["doku"],"ausschluesse":["Schlager","Schlagermusik","Volksmusik"]} — Schlager ist KEIN Thema, nur Ausschluss. '
     + 'genres: 0-5 passende Werte NUR aus dieser Liste: ' + GENRE_KEYS.join(', ') + '. Nur was aus den genannten Interessen folgt. '
     + 'ausschluesse: SEHR WICHTIG. Alles, was der Nutzer NICHT will. Erkenne Verneinungen wie "keine …", "kein …", "nichts mit …", "ohne …", "bitte nicht …", "… mag ich nicht", "ausser …". '
     + 'Erweitere Ausschluesse um enge Synonyme (z.B. "Schlagermusik" -> Schlager, Volksmusik; "nichts mit Kochen" -> Kochen, Kochshow, Rezepte, Backen). Leer NUR, wenn wirklich keine Verneinung im Text steht.';
@@ -97,13 +99,22 @@ export async function onRequestPost(context) {
   const genres = cleanList(parsed.genres, 5).map(g => g.toLowerCase()).filter(g => GENRE_KEYS.includes(g));
   // Themen-Gruppen validieren; flache suchbegriffe zusätzlich liefern
   // (abwärtskompatibel — der Empfehlungs-Feed sucht mit der flachen Liste)
+  const ausschluesse = cleanList(parsed.ausschluesse, 8);
+  // Sicherheitsnetz: Gruppen, die verneinte Interessen doppeln (Name/Begriffe
+  // überlappen mit ausschluesse), verwerfen — die KI machte aus "keine Schlager"
+  // sonst zusaetzlich ein positives Thema "Schlagermusik" (Interplay-Test)
+  const exSet = ausschluesse.map(a => a.toLowerCase());
+  const overlapsExclusion = (name, begriffe) => {
+    const all = [name.toLowerCase(), ...begriffe.map(b => b.toLowerCase())];
+    return all.some(w => exSet.some(x => w.includes(x) || x.includes(w)));
+  };
   const themen = [];
   if (Array.isArray(parsed.themen)) {
     for (const t of parsed.themen.slice(0, 8)) {
       if (!t || typeof t !== 'object') continue;
       const name = (typeof t.name === 'string' ? t.name.trim() : '').slice(0, 40);
       const begriffe = cleanList(t.begriffe, 6);
-      if (name && begriffe.length > 0) themen.push({ name, begriffe });
+      if (name && begriffe.length > 0 && !overlapsExclusion(name, begriffe)) themen.push({ name, begriffe });
     }
   }
   const flach = [];
@@ -113,6 +124,6 @@ export async function onRequestPost(context) {
     themen: themen,
     suchbegriffe: suchbegriffe,
     genres: genres,
-    ausschluesse: cleanList(parsed.ausschluesse, 8)
+    ausschluesse: ausschluesse
   });
 }
