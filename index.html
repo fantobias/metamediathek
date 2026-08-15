@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-15.2">
+<meta name="mm-build" content="2026-08-15.3">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -587,7 +587,7 @@
   <div class="filters">
     <div class="filter-group">
       <span class="filter-label">Sender</span>
-      <select class="filter-select" id="filterChannel" onchange="doSearch()">
+      <select class="filter-select" id="filterChannel" onchange="onServerFilterChange()">
         <option value="">Alle Sender</option>
         <option value="ARD">ARD</option>
         <option value="ZDF">ZDF</option>
@@ -611,7 +611,7 @@
     </div>
     <div class="filter-group">
       <span class="filter-label">Mindestdauer</span>
-      <select class="filter-select" id="filterDurationMin" onchange="doSearch()">
+      <select class="filter-select" id="filterDurationMin" onchange="onServerFilterChange()">
         <option value="0" selected>Beliebig</option>
         <option value="300">Ab 5 Min.</option>
         <option value="900">Ab 15 Min.</option>
@@ -623,7 +623,7 @@
     </div>
     <div class="filter-group">
       <span class="filter-label">Max. Dauer</span>
-      <select class="filter-select" id="filterDurationMax" onchange="doSearch()">
+      <select class="filter-select" id="filterDurationMax" onchange="onServerFilterChange()">
         <option value="0">Beliebig</option>
         <option value="1800">Bis 30 Min.</option>
         <option value="3600">Bis 60 Min.</option>
@@ -1029,6 +1029,13 @@ function isGenericTopic(topic) {
 // Known news/magazine/talk shows — they report ON films/topics; their episodes
 // are no series episodes. Wird auch von der Geschmacks-Ansicht genutzt,
 // um Tagesnachrichten aus dem Profil-Ranking herauszuhalten.
+// Sport-Berichterstattung: liefert bei Genre-Chips (Thriller/Drama) Wortmatch-Rauschen
+// ("Fussball-Thriller", "Sturz-Drama") — bei Chip-Suchen ausblenden
+function isSportTopic(topic) {
+  if (!topic) return false;
+  return /sportschau|sportclub|sport\s*am|bundesliga|fifa|uefa|leichtathletik|olympia|wintersport|fussball|fußball|sportstudio|blickpunkt\s*sport|rad\s*sport|handball|biathlon|wm\s*20|em\s*20/i.test(topic);
+}
+
 function isNewsMagazineTopic(topic) {
   if (!topic) return false;
   const cleaned = topic.replace(/[-–:]/g, ' ').trim();
@@ -1704,6 +1711,18 @@ function clearTasteProfile() {
   rescoreAndRender();
 }
 
+// og:image-Poster: fehlgeschlagene URLs merken — jedes TMDB-Re-Render erzeugte
+// sonst dieselben 404-Requests erneut (Konsolen-/Netzwerk-Flut)
+const ogFailed = new Set();
+function ogFail(el) {
+  try { ogFailed.add(el.getAttribute('data-og') || ''); } catch (e) {}
+  el.remove();
+}
+function renderOgPoster(urlWebsite) {
+  if (ogFailed.has(urlWebsite)) return '';
+  return `<img class="og-poster" src="/api/ogimage?url=${encodeURIComponent(urlWebsite)}" data-og="${escAttr(urlWebsite)}" alt="" onerror="ogFail(this)">`;
+}
+
 // ─── Channel & Genre helpers ───
 function getChannelClass(ch) {
   const c = (ch || '').toUpperCase();
@@ -2149,7 +2168,7 @@ function renderCard(item, idx) {
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
             : renderPosterPlaceholder(item, genres, chClass) + (API_MODE && urlWebsite
-              ? `<img class="og-poster" src="/api/ogimage?url=${encodeURIComponent(urlWebsite)}" alt="" onerror="this.remove()">`
+              ? renderOgPoster(urlWebsite)
               : '')}
         </div>
         <div class="card-body">
@@ -2163,7 +2182,7 @@ function renderCard(item, idx) {
             </div>
           </div>
           <div class="card-topic">${escHtml(item.topic)}${tmdb?.person_role ? ` · <span style="color:var(--orange)">${escHtml(tmdb.person_role)}</span>` : ''}</div>
-          <div class="card-title">${escHtml(item.title)}</div>
+          <div class="card-title">${escHtml(item._variants ? stripVariantSuffix(item.title) : item.title)}</div>
           <div class="card-genres">
             ${tmdbGenres.map(g => `<span class="genre-tag tmdb-genre">${g}</span>`).join('')}
             ${tmdbGenres.length === 0 ? genres.map(g => `<span class="genre-tag">${g}</span>`).join('') : ''}
@@ -2368,9 +2387,18 @@ function applySortAndFilter() {
     });
   }
 
+  // Genre-Chips versprechen Filme/Serien, die Volltextsuche findet aber auch
+  // Sport- und Magazinbeitraege ("WM-Thriller", "Sturz-Drama", Kulturzeit ueber
+  // Sci-Fi-Ausstellungen) — bei diesen Chips News/Magazin/Sport ausblenden
+  if (activeQuickFilter && GENRE_CHIP_TERMS.includes(activeQuickFilter)) {
+    filtered = filtered.filter(r => !isNewsMagazineTopic(r.topic) && !isSportTopic(r.topic));
+  }
+
   // Client-side text filter (for quick-chips and re-filtering without API call)
+  // Personen-Treffer (_fromPerson) passieren immer: Der Name steht meist nicht im Filmtext.
   if (searchText) {
     filtered = filtered.filter(r => {
+      if (r._fromPerson) return true;
       const haystack = normDE(`${r.channel} ${r.topic} ${r.title} ${r.description || ''} ${r._senderDesc || ''} ${r._tmdb?.overview || ''}`);
       const words = normDE(searchText).split(/\s+/);
       return words.every(w => haystack.includes(w));
@@ -2615,6 +2643,31 @@ async function doSearch(resetOffset = true, keepChips = false) {
   enrichWithTMDB_background(enrichedResults);
 }
 
+// Sender-/Dauer-Wechsel: Der volle Server-Abruf dauert je nach Leitung 8-15 s.
+// Damit sich der Filter sofort anfühlt, wird SOFORT eine Vorschau aus den bereits
+// geladenen Ergebnissen gerendert; das vollständige Server-Ergebnis ersetzt sie,
+// sobald es da ist (der gedimmte Lade-Zustand zeigt den Übergang an).
+function onServerFilterChange() {
+  try {
+    if (enrichedResults.length > 0) {
+      const ch = document.getElementById('filterChannel').value.toLowerCase();
+      const dmin = parseInt(document.getElementById('filterDurationMin').value) || 0;
+      const dmax = parseInt(document.getElementById('filterDurationMax').value) || 0;
+      let preview = enrichedResults;
+      if (ch) preview = preview.filter(r => (r.channel || '').toLowerCase().includes(ch));
+      if (dmin > 0) preview = preview.filter(r => (r.duration || 0) >= dmin);
+      if (dmax > 0) preview = preview.filter(r => (r.duration || 0) <= dmax);
+      const keep = enrichedResults;
+      enrichedResults = preview;
+      applySortAndFilter();
+      enrichedResults = keep;
+      document.getElementById('filteredInfo').innerHTML =
+        'Vorschau aus bereits geladenen Ergebnissen — vollständige Treffer werden geladen…';
+    }
+  } catch (e) { /* Vorschau ist nur Komfort — niemals die echte Suche blockieren */ }
+  doSearch();
+}
+
 // Sortierwechsel: Client-Sortierungen (Rating, Geschmack) brauchen keinen neuen
 // Server-Abruf — die Daten liegen schon da. Spart 10-30 s Wartezeit (Nutzertest-Befund).
 function onSortChange() {
@@ -2653,6 +2706,8 @@ const CHIP_TERMS = [...document.querySelectorAll('#quickChips .chip')].map(c => 
 // Serien-Chips suchen nur im Sendungs-Thema (topic) — Volltext lieferte
 // "Rote Rosen: Wenn der Tatort anklopft" & Co. (Interplay-Test)
 const TOPIC_CHIP_TERMS = ['Tatort', 'Polizeiruf'];
+// Genre-Chips, deren Volltextsuche News/Magazin/Sport-Rauschen anzieht (Interplay-Test A004-A013)
+const GENRE_CHIP_TERMS = ['Thriller', 'Drama', 'Komödie', 'Liebe', 'Science Fiction', 'Spielfilm', 'Krimi'];
 
 // Chip-Markierung IMMER aus activeQuickFilter ableiten — der frühere
 // textContent-Vergleich ließ "Dokus" und "Sci-Fi" nie aufleuchten
@@ -2790,6 +2845,10 @@ async function doCombinedSearch() {
   // Merge: title results + person results, deduplicate (einheitlicher Key)
   const seen = new Set();
   const merged = [];
+  // Personen-Treffer markieren: Sie stammen aus der TMDB-Filmografie und
+  // enthalten den gesuchten Namen oft NICHT im Titel/Text — der Client-Textfilter
+  // darf sie deshalb nicht aussortieren (Interplay-Test: Emily 28/66 sichtbar)
+  for (const r of personResults) r._fromPerson = true;
   for (const r of [...titleResults, ...personResults]) {
     const key = getItemKey(r);
     if (!seen.has(key)) {
