@@ -1,12 +1,19 @@
 -- Schema für die D1-Datenbank "metamediathek-feedback" (Binding: DB)
 -- Einmalig in der Cloudflare-D1-Konsole ausführen.
 CREATE TABLE IF NOT EXISTS feedback (
-  id   INTEGER PRIMARY KEY AUTOINCREMENT,
-  ts   INTEGER NOT NULL,          -- Unix-Millisekunden (Serverzeit)
-  type TEXT    NOT NULL,          -- 'feedback' | 'error' | 'events' | 'other'
-  sid  TEXT,                      -- anonyme Session-ID des Clients
-  ua   TEXT,                      -- User-Agent (gekürzt)
-  body TEXT    NOT NULL           -- komplette Einsendung als JSON
+  id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts    INTEGER NOT NULL,          -- Unix-Millisekunden (Serverzeit)
+  type  TEXT    NOT NULL,          -- 'feedback' | 'error' | 'events' | 'other'
+  sid   TEXT,                      -- anonyme Session-ID des Clients
+  ua    TEXT,                      -- User-Agent (gekürzt)
+  build TEXT,                      -- App-Version (mm-build, z.B. "2026-08-15.1")
+  body  TEXT    NOT NULL           -- komplette Einsendung als JSON
 );
-CREATE INDEX IF NOT EXISTS idx_feedback_ts   ON feedback(ts);
-CREATE INDEX IF NOT EXISTS idx_feedback_type ON feedback(type);
+CREATE INDEX IF NOT EXISTS idx_feedback_ts    ON feedback(ts);
+CREATE INDEX IF NOT EXISTS idx_feedback_type  ON feedback(type);
+CREATE INDEX IF NOT EXISTS idx_feedback_build ON feedback(build);
+-- Migration für bestehende Tabellen (einmalig):
+--   ALTER TABLE feedback ADD COLUMN build TEXT;
+--   CREATE INDEX IF NOT EXISTS idx_feedback_build ON feedback(build);
+-- Ältere Zeilen ohne Spalte nachtragen (Version steckt im JSON der session_start-Events):
+--   UPDATE feedback SET build = json_extract(body, '$.build') WHERE build IS NULL;
