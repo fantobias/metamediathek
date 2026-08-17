@@ -825,11 +825,14 @@ const TASTE_MIN_SCORE = 3;            // Geschmacks-Ansicht: mind. "leicht passe
 const TASTE_MIN_DURATION = 1200;      // Geschmacks-Ansicht: nur Inhalte ab 20 Min. (filtert News-Schnipsel)
 const QUERY_CACHE_TTL_MS = 10 * 60 * 1000;
 // Semantisches Matching (Embeddings, Stufe 2): Cosine unterhalb SEM_BASE gilt
-// als „kein Zusammenhang" (bge-m3 liefert auch für Unverwandtes ~0.3–0.5);
-// darüber wird linear in Punkte übersetzt. Kalibriert auf test — Cosine 0.62
-// (klarer Themen-Treffer) ≈ +3 Punkte, 0.75 (Volltreffer) ≈ +6,25.
-const SEM_BASE = 0.5;
-const SEM_SCALE = 25;
+// als „kein Zusammenhang"; darüber wird linear in Punkte übersetzt.
+// EMPIRISCH KALIBRIERT (test, 17.08.): Volltreffer „skandinavische Krimis" →
+// Wallander-Folgen 0.55–0.57; Unpassendes (Landfrauenküche, Feed-Rauschen)
+// max. 0.44. Basis 0.45 + Skala 30 ⇒ Wallander ≈ +3,5 (über der
+// Feed-Schwelle TASTE_MIN_SCORE=3, damit rein semantische Treffer den Feed
+// erreichen), Unpassendes 0.
+const SEM_BASE = 0.45;
+const SEM_SCALE = 30;
 
 // ─── State ───
 // Bewusst einfache Modul-Globals (Single-File-Prototyp). Bei Modularisierung
