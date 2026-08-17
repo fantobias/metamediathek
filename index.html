@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-15.3">
+<meta name="mm-build" content="2026-08-17.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -2065,11 +2065,32 @@ async function fetchResults() {
 let tmdbEnrichAbort = null; // to cancel enrichment when new search starts
 let lastEnrichRender = 0;
 
+// Play-Klick-Schutz: Tauscht ein Enrichment-Render das Grid zwischen
+// pointerdown und pointerup aus, feuert der Browser KEIN click-Event mehr
+// (mousedown- und mouseup-Ziel sind verschiedene Elemente) — "Play wirkt
+// erst beim zweiten Klick" (Nutzertest-Befund). Deshalb: solange ein Zeiger
+// unten ist, Renders zurückhalten und nach dem Loslassen nachholen.
+let pointerIsDown = false;
+let pendingEnrichRender = false;
+document.addEventListener('pointerdown', () => { pointerIsDown = true; }, true);
+function releasePointer() {
+  pointerIsDown = false;
+  if (pendingEnrichRender) {
+    pendingEnrichRender = false;
+    // kleiner Aufschub, damit der laufende Klick (click-Event nach pointerup)
+    // noch auf dem alten DOM landet
+    setTimeout(() => { lastEnrichRender = Date.now(); applySortAndFilter(); }, 120);
+  }
+}
+document.addEventListener('pointerup', releasePointer, true);
+document.addEventListener('pointercancel', releasePointer, true);
+
 // Zeitbasiertes Render-Throttling: statt ~20 Voll-Renders pro Suche
 // (200 Karten × 20 = 4000 Karten-Renders) höchstens 1 Render pro 800ms.
 function scheduleEnrichRender(force = false) {
   const now = Date.now();
   if (!force && now - lastEnrichRender < RENDER_THROTTLE_MS) return;
+  if (pointerIsDown) { pendingEnrichRender = true; return; }
   lastEnrichRender = now;
   applySortAndFilter();
 }
@@ -2397,6 +2418,48 @@ function applySortAndFilter() {
     filtered = filtered.filter(r => !isNewsMagazineTopic(r.topic) && !isSportTopic(r.topic) && !regionalNoise.test(r.topic || ''));
   }
 
+  // Startseiten-Kuration (Nutzertest-Befund: rohe "Neueste zuerst"-Liste ist
+  // einzelsender-lastig, voller Minuten-Schnipsel, Dubletten und News-Rauschen).
+  // Nur in der Start-Ansicht — keine Suche, kein Chip, kein Profil-Feed, keine
+  // eigene Sortier-/Filterwahl — und rein client-seitig, keine Extra-Anfragen.
+  const startView = !searchText && !activeQuickFilter && !feedView
+    && sortVal === 'timestamp_desc' && !document.getElementById('filterChannel').value
+    && (parseInt(document.getElementById('filterDurationMin').value) || 0) === 0;
+  let curationApplied = false;
+  if (startView && enrichedResults.length > 0) {
+    const startNoise = /journal|umschau|\bmagazin\b|aktuell\b|nachrichten|wetter|\btalk\b/i;
+    // 1) Rauschen raus: Schnipsel unter 8 Min., News/Sport/Regionaljournale
+    let curated = filtered.filter(r =>
+      (r.duration || 0) >= 480
+      && !isNewsMagazineTopic(r.topic)
+      && !isSportTopic(r.topic)
+      && !startNoise.test(r.topic || ''));
+    // 2) Dubletten begrenzen: höchstens 2 Kacheln pro Sendung
+    const perTopic = Object.create(null);
+    curated = curated.filter(r => {
+      const k = `${r.channel}|${r.topic || r.title}`.toLowerCase();
+      perTopic[k] = (perTopic[k] || 0) + 1;
+      return perTopic[k] <= 2;
+    });
+    // 3) Sender-Mix: reihum ein Ergebnis pro Sender (innerhalb des Senders
+    // bleibt aktuell-zuerst) — verhindert Blöcke eines einzelnen Senders
+    const byChannel = new Map();
+    for (const r of curated) {
+      const c = r.channel || '?';
+      if (!byChannel.has(c)) byChannel.set(c, []);
+      byChannel.get(c).push(r);
+    }
+    const mixed = [];
+    const queues = [...byChannel.values()];
+    for (let i = 0; mixed.length < curated.length; i++) {
+      const q = queues[i % queues.length];
+      if (q.length) mixed.push(q.shift());
+    }
+    // Sicherheitsnetz: Kuration darf die Startseite nie leerfegen —
+    // bei zu wenig Substanz lieber die ungefilterte Liste zeigen
+    if (mixed.length >= 8) { filtered = mixed; curationApplied = true; }
+  }
+
   // Client-side text filter (for quick-chips and re-filtering without API call)
   // Personen-Treffer (_fromPerson) passieren immer: Der Name steht meist nicht im Filmtext.
   if (searchText) {
@@ -2443,7 +2506,10 @@ function applySortAndFilter() {
 
   // Update UI counts
   const filteredInfo = document.getElementById('filteredInfo');
-  if (filtered.length !== enrichedResults.length) {
+  if (curationApplied) {
+    // Kuration ist kein Nutzer-Filter — nicht als "(Filter aktiv)" ausweisen
+    filteredInfo.innerHTML = `Aktuelle Auswahl: <strong>${filtered.length}</strong> Sendungen quer durch die Sender — Kurzclips &amp; Nachrichten ausgeblendet. Suche oder Chips zeigen alles.`;
+  } else if (filtered.length !== enrichedResults.length) {
     // Klar benennen, WORAUF sich die Zahl bezieht — der Widerspruch
     // "1.708 Treffer, 0 Karten" war der häufigste Verwirrungs-Befund im Nutzertest
     const olderLink = ageHidden > 0
