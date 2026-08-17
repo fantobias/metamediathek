@@ -17,3 +17,15 @@ CREATE INDEX IF NOT EXISTS idx_feedback_build ON feedback(build);
 --   CREATE INDEX IF NOT EXISTS idx_feedback_build ON feedback(build);
 -- Ältere Zeilen ohne Spalte nachtragen (Version steckt im JSON der session_start-Events):
 --   UPDATE feedback SET build = json_extract(body, '$.build') WHERE build IS NULL;
+
+-- Redeploy-Trigger 2026-08-17: GitHub-Webhook-Stoerung verschluckte das Push-Event des PR-#6-Merges;
+-- dieser Commit stoesst den Cloudflare-Pages-Build fuer main neu an. Kein inhaltlicher Effekt.
+
+-- Embedding-Cache für das semantische Geschmacks-Matching (/api/embed):
+CREATE TABLE IF NOT EXISTS embeddings (
+  hash  TEXT PRIMARY KEY,     -- SHA-256 (hex) des eingebetteten Texts
+  model TEXT NOT NULL,        -- z.B. '@cf/baai/bge-m3'
+  v     TEXT NOT NULL,        -- Vektor, Int8-quantisiert, base64
+  s     REAL NOT NULL,        -- Quantisierungs-Skala (float = int8 * s)
+  ts    INTEGER NOT NULL      -- Unix-Millisekunden (Schreibzeitpunkt)
+);
