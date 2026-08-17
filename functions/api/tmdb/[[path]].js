@@ -1,6 +1,8 @@
 // GET /api/tmdb/<pfad> — TMDB-Proxy, hängt den API-Key serverseitig an.
 // Key liegt als Secret TMDB_API_KEY im Pages-Projekt (Settings → Variables and Secrets).
-const ALLOWED = /^(search\/(movie|tv|person)|person\/\d+\/combined_credits)$/;
+// movie/N und tv/N: Detailabruf (append_to_response=keywords,credits) für
+// Geschmacks-Scoring (Schlagwörter, Regie/Cast) und Modal-Anzeige.
+const ALLOWED = /^(search\/(movie|tv|person)|person\/\d+\/combined_credits|movie\/\d+|tv\/\d+)$/;
 
 export async function onRequestGet(context) {
   const params = context.params;

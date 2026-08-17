@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-17.1">
+<meta name="mm-build" content="2026-08-17.3">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -51,6 +51,12 @@
   .logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
   .logo-icon { font-size: 28px; }
   .logo span { color: var(--accent); }
+  /* Versions-Anzeige: klein neben dem Logo — hilft beim Zuordnen von Feedback
+     („welche Version hast du gerade?") und beim Prüfen nach einem Deploy */
+  .build-tag {
+    font-size: 10px; font-weight: 400; color: var(--text-dim);
+    margin-left: 8px; align-self: flex-start; margin-top: 2px;
+  }
   .header-right { display: flex; align-items: center; gap: 16px; }
   .stats { display: flex; gap: 20px; font-size: 13px; color: var(--text-dim); }
   .stats strong { color: var(--text); }
@@ -548,6 +554,7 @@
     <div class="logo" role="button" tabindex="0" title="Zur Startansicht" onclick="goHome()" onkeydown="if(event.key==='Enter')goHome()">
       <span class="logo-icon">📺</span>
       <div>Meta<span>Mediathek</span></div>
+      <span class="build-tag" id="buildTag" title="App-Version"></span>
     </div>
     <div class="header-right">
       <div class="stats">
@@ -817,6 +824,15 @@ const QUERY_CACHE_MAX = 20;           // gecachte Mediathek-Antworten (LRU)
 const TASTE_MIN_SCORE = 3;            // Geschmacks-Ansicht: mind. "leicht passend" (Punkte-Label-Schwelle)
 const TASTE_MIN_DURATION = 1200;      // Geschmacks-Ansicht: nur Inhalte ab 20 Min. (filtert News-Schnipsel)
 const QUERY_CACHE_TTL_MS = 10 * 60 * 1000;
+// Semantisches Matching (Embeddings, Stufe 2): Cosine unterhalb SEM_BASE gilt
+// als „kein Zusammenhang"; darüber wird linear in Punkte übersetzt.
+// EMPIRISCH KALIBRIERT (test, 17.08.): Volltreffer „skandinavische Krimis" →
+// Wallander-Folgen 0.55–0.57; Unpassendes (Landfrauenküche, Feed-Rauschen)
+// max. 0.44. Basis 0.45 + Skala 30 ⇒ Wallander ≈ +3,5 (über der
+// Feed-Schwelle TASTE_MIN_SCORE=3, damit rein semantische Treffer den Feed
+// erreichen), Unpassendes 0.
+const SEM_BASE = 0.45;
+const SEM_SCALE = 30;
 
 // ─── State ───
 // Bewusst einfache Modul-Globals (Single-File-Prototyp). Bei Modularisierung
@@ -830,6 +846,136 @@ let displayedResults = [];  // currently displayed (after filter/sort)
 let tmdbCache = {};         // "topic|||title" -> TMDB-Ergebnis (oder null = kein Match)
 let tasteKeywords = null;   // parsed taste profile
 let searchSeq = 0;          // Generation-Token: entwertet veraltete Such-Antworten (Race-Schutz)
+let profileVec = null;      // Int8Array: Embedding des Profils (semantisches Matching)
+const embMem = new Map();   // Film-Embedding-Hash -> Int8Array | null (Sitzungs-Cache)
+
+// ─── Semantisches Matching: Embedding-Helfer (Stufe 2) ───
+// Aufwandsteilung: Jeder Film wird EINMAL eingebettet (Server cacht in D1),
+// wiederkehrend bleibt nur der Cosine-Vergleich hier im Client.
+async function sha256hex(s) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function b64ToInt8(b64) {
+  const bin = atob(b64);
+  const arr = new Int8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    const x = bin.charCodeAt(i);
+    arr[i] = x > 127 ? x - 256 : x;
+  }
+  return arr;
+}
+// Cosine auf Int8-quantisierten Vektoren — die Quantisierungs-Skalen kürzen
+// sich in der Cosine-Formel heraus, deshalb reichen die Rohwerte
+function cosineInt8(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+}
+
+// Profil-Embedding: aus der KI-Interpretation gebaut (Themen-Gruppen, Genres) —
+// NICHT aus dem Rohtext, denn Embeddings verstehen Verneinungen nicht
+// („nichts mit Kochen" läge nahe bei „Kochen"). Die Interpretation enthält
+// nur Positives; Ausschlüsse behandelt weiterhin das Schlagwort-Scoring.
+function profileEmbedText(p, rawText) {
+  const parts = [];
+  if (p?.contentGroups?.length) parts.push(...p.contentGroups.map(g => `${g.name}: ${g.begriffe.join(', ')}`));
+  else if (p?.contentKeywords?.length) parts.push(p.contentKeywords.join(', '));
+  if (p?.positives?.length) parts.push('Genres: ' + p.positives.map(s => s.genre).join(', '));
+  return (parts.length ? parts.join('. ') : (rawText || '')).slice(0, 800);
+}
+
+async function ensureProfileVec() {
+  const before = profileVec;
+  try {
+    profileVec = null;
+    if (API_MODE && tasteKeywords) {
+      const basis = profileEmbedText(tasteKeywords, localStorage.getItem('metaMediathek_taste') || '');
+      if (basis) {
+        const hash = await sha256hex('profil:' + basis);
+        let fromCache = false;
+        try {
+          const cached = JSON.parse(localStorage.getItem('metaMediathek_tasteVec') || 'null');
+          if (cached && cached.hash === hash && cached.v) { profileVec = b64ToInt8(cached.v); fromCache = true; }
+        } catch (e) {}
+        if (!fromCache) {
+          const res = await fetch('/api/embed', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: [{ hash, text: basis }] })
+          });
+          const data = res.ok ? await res.json() : null;
+          const vec = data?.vectors?.[hash];
+          if (vec?.v) {
+            profileVec = b64ToInt8(vec.v);
+            try { localStorage.setItem('metaMediathek_tasteVec', JSON.stringify({ hash, v: vec.v })); } catch (e) {}
+          }
+          // sonst: Workers-AI nicht verfügbar → Schlagwort-Scoring allein
+        }
+      }
+    }
+  } catch (e) { profileVec = null; }
+  // Profil-Vektor gewechselt: gemerkte Cosine-Werte der geladenen Ergebnisse
+  // gelten nur fürs alte Profil (die Film-Vektoren in embMem bleiben gültig)
+  if (before !== profileVec) {
+    for (const r of enrichedResults) { delete r._sem; }
+  }
+}
+
+// Text, der einen Film für das Embedding repräsentiert: Titel, Sendung,
+// Genres, TMDB-Keywords, Personen, Inhaltsangabe
+function filmEmbedText(item) {
+  const t = item._tmdb, d = t?._details;
+  return [
+    item._variants ? stripVariantSuffix(item.title) : item.title,
+    item.topic,
+    t ? tmdbGenreNames(t.genre_ids).join(', ') : '',
+    d?.keywords?.length ? d.keywords.join(', ') : '',
+    d?.director ? 'Regie: ' + d.director : '',
+    d?.cast?.length ? 'Mit: ' + d.cast.join(', ') : '',
+    t?.overview || item.description || item._senderDesc || ''
+  ].filter(Boolean).join('. ').slice(0, 1100);
+}
+
+// Einen Enrichment-Batch einbetten und die Taste-Scores nachziehen.
+// Fehler sind hier nie fatal — dann bleibt es beim Schlagwort-Scoring.
+async function embedBatch(items, ctrl) {
+  try {
+    if (!profileVec) return;
+    const want = [];
+    for (const it of items) {
+      if (typeof it._sem === 'number') continue;
+      if (!it._embHash) it._embHash = await sha256hex('film:' + filmEmbedText(it));
+      const memo = embMem.get(it._embHash);
+      if (memo instanceof Int8Array) {
+        it._sem = cosineInt8(profileVec, memo);
+        it._tasteScore = scoreTaste(it, it._tmdb, tasteKeywords);
+        continue;
+      }
+      if (memo === null) continue; // schon versucht, kein Vektor
+      want.push(it);
+    }
+    if (want.length === 0 || (ctrl && ctrl.cancelled)) return;
+    const req = want.slice(0, 20).map(it => ({ hash: it._embHash, text: filmEmbedText(it) }));
+    const res = await fetch('/api/embed', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: req })
+    });
+    if (!res.ok || (ctrl && ctrl.cancelled)) return;
+    const data = await res.json();
+    for (const it of want.slice(0, 20)) {
+      const v = data?.vectors?.[it._embHash];
+      if (v?.v) {
+        const arr = b64ToInt8(v.v);
+        embMem.set(it._embHash, arr);
+        it._sem = cosineInt8(profileVec, arr);
+        it._tasteScore = scoreTaste(it, it._tmdb, tasteKeywords);
+      } else {
+        embMem.set(it._embHash, null);
+      }
+    }
+  } catch (e) { /* Netz/AI-Fehler: Schlagwort-Scoring bleibt */ }
+}
 
 // ─── Mini-Event-System ───
 // Zentrale Andockstelle für spätere Features (Gesehen-Markierung, Likes, Statistiken).
@@ -956,8 +1102,39 @@ function buildTmdbResult(best, type = 'movie') {
     genre_ids: best.genre_ids || [],
     original_title: (isTV ? best.original_name : best.original_title) || '',
     title: (isTV ? best.name : best.title) || '',
-    popularity: best.popularity || 0
+    popularity: best.popularity || 0,
+    // Originalsprache (fr, en, …) — Basis für einen späteren Herkunfts-Filter
+    original_language: best.original_language || ''
   };
+}
+
+// ─── TMDB-Detailabruf: Schlagwörter, Regie/Cast, Länder (Stufe 1) ───
+// Die Suche liefert nur Genre-IDs und Kurztext; erst der Detailabruf bringt
+// die kuratierten Keywords („Dystopie", „wahre Begebenheit") und Personen,
+// die das Geschmacks-Matching substanziell machen. Ein Call pro Film, am
+// Edge 24h gecacht; abgerufen nur bei aktivem Profil oder Modal-Öffnung.
+function tmdbDetails(tmdb) {
+  if (!tmdb || !tmdb.tmdb_id) return Promise.resolve(null);
+  if (!tmdb._detailsP) {
+    tmdb._detailsP = (async () => {
+      const type = tmdb.tmdb_type === 'tv' ? 'tv' : 'movie';
+      const data = await fetchJsonSafe(tmdbApiUrl(`${type}/${tmdb.tmdb_id}`, 'language=de-DE&append_to_response=keywords,credits'));
+      if (!data || !data.id) { tmdb._details = null; return null; }
+      const kw = (data.keywords?.keywords || data.keywords?.results || [])
+        .map(k => k.name).filter(Boolean).slice(0, 20);
+      const crew = data.credits?.crew || [];
+      const director = crew.filter(c => c.job === 'Director').map(c => c.name).slice(0, 2).join(', ');
+      const cast = (data.credits?.cast || []).slice(0, 6).map(c => c.name).filter(Boolean);
+      const countries = (data.production_countries || []).map(c => c.name || c.iso_3166_1).filter(Boolean);
+      tmdb._details = {
+        keywords: kw, director, cast, countries,
+        genres: (data.genres || []).map(g => g.name).filter(Boolean),
+        runtime: data.runtime || (Array.isArray(data.episode_run_time) ? data.episode_run_time[0] : 0) || 0
+      };
+      return tmdb._details;
+    })();
+  }
+  return tmdb._detailsP;
 }
 
 // Compute title similarity (0.0 to 1.0)
@@ -1368,8 +1545,14 @@ function parseTasteProfile(text) {
 function scoreTaste(item, tmdb, profile, explain = false) {
   if (!profile) return explain ? { score: 0, reasons: [] } : 0;
   // _senderDesc: og:description der Senderseite — zusätzliches Matching-Futter,
-  // wenn TMDB keine Inhaltsangabe liefert
-  const text = normDE(`${item.topic} ${item.title} ${item.description || ''} ${item._senderDesc || ''} ${tmdb?.overview || ''}`);
+  // wenn TMDB keine Inhaltsangabe liefert. Die Detail-Anreicherung (Stufe 1)
+  // steuert Schlagwörter, Regie/Cast, Länder und lokalisierte Genres bei —
+  // damit greifen Profile wie „mag Filme von …" oder „wahre Begebenheiten".
+  const d = tmdb?._details;
+  const detailText = d
+    ? ` ${(d.keywords || []).join(' ')} ${d.director || ''} ${(d.cast || []).join(' ')} ${(d.countries || []).join(' ')} ${(d.genres || []).join(' ')}`
+    : '';
+  const text = normDE(`${item.topic} ${item.title} ${item.description || ''} ${item._senderDesc || ''} ${tmdb?.overview || ''}${detailText}`);
   const tmdbGenres = tmdb ? tmdbGenreNames(tmdb.genre_ids).map(g => normDE(g)) : [];
   let score = 0;
   const reasons = explain ? [] : null;
@@ -1485,6 +1668,15 @@ function scoreTaste(item, tmdb, profile, explain = false) {
       score -= 6;
       if (reasons) reasons.push({ pts: -6, text: `Ausschluss-Thema "${nk}"${m.via ? ` (über Synonym "${m.via}")` : ''} passt zum Filmtext` });
     }
+  }
+
+  // 5) Semantische Nähe (Embeddings, Stufe 2) — greift auch OHNE wörtliche
+  // Überlappung: „düstere Zukunftsvisionen" im Profil findet die „Dystopie"
+  // im Filmtext. item._sem wird asynchron im Enrichment gesetzt.
+  if (typeof item._sem === 'number' && item._sem > SEM_BASE) {
+    const pts = Math.round((item._sem - SEM_BASE) * SEM_SCALE * 10) / 10;
+    score += pts;
+    if (reasons) reasons.push({ pts, text: `Inhaltlich nah an deinem Profil (semantische Ähnlichkeit ${Math.round(item._sem * 100)}%)` });
   }
 
   return explain ? { score, reasons } : score;
@@ -1623,6 +1815,12 @@ async function applyTasteProfile() {
   document.getElementById('profileToggle').classList.add('active');
   document.getElementById('filterSort').value = 'taste_desc';
 
+  // Stufe 2: Profil-Vektor holen, BEVOR der Feed startet — sonst liefe das
+  // erste Enrichment ohne semantisches Matching (nach dem ersten Mal aus dem
+  // localStorage-Cache, also praktisch sofort)
+  await ensureProfileVec();
+  if (tSeq !== tasteSeq) return;
+
   if (API_MODE && tasteKeywords.searchTerms && tasteKeywords.searchTerms.length > 0) {
     // Empfehlungs-Feed: aktiv im Gesamtbestand suchen statt nur die
     // bereits geladenen Ergebnisse umzusortieren
@@ -1698,11 +1896,13 @@ function clearTasteProfile() {
   feedView = false;
   document.getElementById('tasteProfile').value = '';
   tasteKeywords = null;
+  profileVec = null;
   document.getElementById('tasteStatus').textContent = '';
   document.getElementById('profileToggle').classList.remove('active');
   try {
     localStorage.removeItem('metaMediathek_taste');
     localStorage.removeItem('metaMediathek_tasteAI4');
+    localStorage.removeItem('metaMediathek_tasteVec');
   } catch(e) {}
   // Reset sort if it was on taste
   if (document.getElementById('filterSort').value === 'taste_desc') {
@@ -2125,10 +2325,21 @@ async function enrichWithTMDB_background(results) {
         if (ctrl.cancelled) return;
         item._senderDesc = (meta && typeof meta.description === 'string') ? meta.description : null;
       }
+      // Stufe 1: Bei aktivem Profil die TMDB-Details (Keywords, Regie/Cast)
+      // nachladen — sie fließen in Haystack und Embedding-Text ein
+      if (tasteKeywords && tmdb) {
+        await tmdbDetails(tmdb);
+        if (ctrl.cancelled) return;
+      }
       item._tasteScore = scoreTaste(item, tmdb, tasteKeywords);
       done++;
     });
     await Promise.all(promises);
+    if (ctrl.cancelled) return;
+
+    // Stufe 2: Batch semantisch einbetten (nur mit Profil-Vektor) und Scores
+    // nachziehen — Reihenfolge/Ranking aktualisiert das nächste Render
+    if (profileVec && tasteKeywords) await embedBatch(batch, ctrl);
     if (ctrl.cancelled) return;
 
     statusEl.textContent = `TMDB: ${done}/${total} ⭐`;
@@ -2348,6 +2559,7 @@ function showDetail(idx) {
           ${tmdbGenres.map(g => `<span class="genre-tag tmdb-genre">${g}</span>`).join('')}
           ${genres.map(g => `<span class="genre-tag">${g}</span>`).join('')}
         </div>
+        <div id="modalCredits"></div>
       </div>
     </div>
     <div class="description">${escHtml(desc)}</div>
@@ -2364,6 +2576,23 @@ function showDetail(idx) {
     </div>
   `;
   document.getElementById('modal').classList.add('active');
+
+  // Regie/Besetzung/Land/Schlagwörter asynchron nachladen (Stufe 1) —
+  // ein Call, am Edge gecacht; füllt #modalCredits sobald verfügbar
+  if (tmdb && tmdb.tmdb_id) {
+    tmdbDetails(tmdb).then(d => {
+      const el = document.getElementById('modalCredits');
+      if (!el || !d) return;
+      const rows = [];
+      if (d.director) rows.push(`<div style="font-size:13px;margin-top:8px;"><span style="color:var(--text-dim)">Regie:</span> ${escHtml(d.director)}</div>`);
+      if (d.cast && d.cast.length) rows.push(`<div style="font-size:13px;margin-top:4px;"><span style="color:var(--text-dim)">Mit:</span> ${escHtml(d.cast.join(', '))}</div>`);
+      if (d.countries && d.countries.length) rows.push(`<div style="font-size:13px;margin-top:4px;"><span style="color:var(--text-dim)">Land:</span> ${escHtml(d.countries.join(', '))}</div>`);
+      if (d.keywords && d.keywords.length) rows.push(`<div style="margin-top:8px;">${d.keywords.slice(0, 10).map(k => `<span class="genre-tag" style="font-size:10px;">${escHtml(k)}</span>`).join(' ')}</div>`);
+      el.innerHTML = rows.join('');
+      // Score kann sich durch die Details verbessert haben — Karte aktuell halten
+      if (tasteKeywords) item._tasteScore = scoreTaste(item, tmdb, tasteKeywords);
+    });
+  }
 }
 
 function closeModal(e) {
@@ -3423,6 +3652,13 @@ document.getElementById('tasteProfile').addEventListener('input', () => {
 updateWlCount();
 
 // Geteilte Links: Filterzustand aus URL-Parametern wiederherstellen
+// Versions-Anzeige im Header aus dem mm-build-Meta füllen (eine Quelle, kein
+// zweiter Ort, der beim Hochzählen vergessen werden könnte)
+try {
+  document.getElementById('buildTag').textContent =
+    'v' + (document.querySelector('meta[name="mm-build"]')?.content || '?');
+} catch (e) {}
+
 restoreStateFromURL();
 // Entspricht die restaurierte Suche einem Chip-Term, Chip wieder markieren
 try {
@@ -3439,7 +3675,9 @@ try {
 if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.length > 0
     && !new URLSearchParams(location.search).get('q')) {
   document.getElementById('filterSort').value = 'taste_desc';
-  profileFeedSearch();
+  // Profil-Vektor zuerst (meist localStorage-Cache, sonst 1 kurzer Call) —
+  // damit schon das erste Enrichment semantisch scoren kann
+  ensureProfileVec().then(() => profileFeedSearch());
 } else {
   doSearch();
 }
