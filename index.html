@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-17.3">
+<meta name="mm-build" content="2026-08-17.4">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -163,6 +163,50 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 16px; padding: 24px 30px;
+  }
+
+  /* Ansicht-Umschalter (Kacheln/Liste) */
+  .view-toggle { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .vt-btn {
+    background: var(--surface); color: var(--text-dim); border: none;
+    padding: 7px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+  .vt-btn.active { background: var(--surface2); color: var(--text); font-weight: 600; }
+
+  /* Serien-Stapel: mehrere Folgen einer Sendung als eine Kachel mit
+     Karten-Stapel-Optik (zwei versetzte Kanten per box-shadow) */
+  .card.series-stack {
+    box-shadow: 5px 5px 0 -1px var(--surface2), 5px 5px 0 0 var(--border),
+                10px 10px 0 -2px var(--surface), 10px 10px 0 0 var(--border);
+    margin-right: 10px; margin-bottom: 10px;
+  }
+  .series-badge {
+    display: inline-block; background: var(--accent); color: #08101d;
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 10px;
+  }
+  .series-hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+  .card.series-episode { border-left: 3px solid var(--accent); }
+
+  /* Kompakte Listen-Ansicht: eine Zeile pro Treffer */
+  .grid.list-view { display: block; padding: 12px 30px 24px; }
+  .rrow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    cursor: pointer; font-size: 13px; line-height: 1.35;
+  }
+  .rrow:hover { background: var(--surface); }
+  .rrow .card-channel { flex: 0 0 auto; }
+  .rrow-title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rrow-title .rt-topic { color: var(--text-dim); }
+  .rrow-meta { flex: 0 0 auto; color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+  .rrow-rating { flex: 0 0 auto; font-size: 12px; white-space: nowrap; }
+  .rrow-actions { flex: 0 0 auto; display: flex; gap: 6px; }
+  .rrow-actions a { text-decoration: none; font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--text); }
+  .rrow-actions a:hover { background: var(--surface2); }
+  .rrow.series-row { font-weight: 600; }
+  .rrow.episode-row { padding-left: 28px; }
+  @media (max-width: 700px) {
+    .rrow-meta, .rrow-rating { display: none; } /* mobil: Zeile schlank halten */
   }
 
   /* Card */
@@ -617,7 +661,20 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Mindestdauer</span>
+      <span class="filter-label" title="Originalsprache laut TMDB — greift nur bei Titeln mit TMDB-Zuordnung">Herkunft</span>
+      <select class="filter-select" id="filterLang" onchange="applySortAndFilter()">
+        <option value="">Alle</option>
+        <option value="fr">Französisch</option>
+        <option value="en">Englisch</option>
+        <option value="it">Italienisch</option>
+        <option value="es">Spanisch</option>
+        <option value="nordic">Nordisch</option>
+        <option value="de">Deutsch</option>
+        <option value="other">Andere</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Dauer ab</span>
       <select class="filter-select" id="filterDurationMin" onchange="onServerFilterChange()">
         <option value="0" selected>Beliebig</option>
         <option value="300">Ab 5 Min.</option>
@@ -629,7 +686,7 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Max. Dauer</span>
+      <span class="filter-label">Dauer bis</span>
       <select class="filter-select" id="filterDurationMax" onchange="onServerFilterChange()">
         <option value="0">Beliebig</option>
         <option value="1800">Bis 30 Min.</option>
@@ -651,7 +708,7 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">Barrierefreiheit / Fassung</span>
+      <span class="filter-label" title="Barrierefreiheit: Untertitel, Audiodeskription, Gebärdensprache, Originalton">Fassung</span>
       <select class="filter-select" id="filterAudio" onchange="applySortAndFilter()">
         <option value="standard" selected>Alle (Fassungen gruppiert)</option>
         <option value="ut">Mit Untertiteln</option>
@@ -662,7 +719,7 @@
       </select>
     </div>
     <div class="filter-group">
-      <span class="filter-label">TMDB-Bewertung (keine FSK!)</span>
+      <span class="filter-label" title="TMDB-Community-Bewertung — keine Altersfreigabe (FSK)!">Bewertung</span>
       <select class="filter-select" id="filterRating" onchange="applySortAndFilter()">
         <option value="0">Alle</option>
         <option value="5">Ab 5.0 ⭐</option>
@@ -691,6 +748,13 @@
         <option value="500">500</option>
         <option value="1000">1000</option>
       </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Ansicht</span>
+      <div class="view-toggle" role="group" aria-label="Darstellung">
+        <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht">⊞ Kacheln</button>
+        <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht">≡ Liste</button>
+      </div>
     </div>
   </div>
 
@@ -848,6 +912,33 @@ let tasteKeywords = null;   // parsed taste profile
 let searchSeq = 0;          // Generation-Token: entwertet veraltete Such-Antworten (Race-Schutz)
 let profileVec = null;      // Int8Array: Embedding des Profils (semantisches Matching)
 const embMem = new Map();   // Film-Embedding-Hash -> Int8Array | null (Sitzungs-Cache)
+
+// ─── Darstellung: Serien-Aggregation + Listen-Ansicht ───
+// Serien fluten Suchergebnisse (60 Wallander-Folgen): ab SERIES_MIN Folgen
+// derselben Sendung wird EINE Stapel-Kachel gezeigt, ausklappbar.
+const SERIES_MIN = 4;
+const seriesExpanded = new Set();  // ausgeklappte Serien (überlebt Re-Renders)
+let viewMode = 'cards';            // 'cards' | 'list' (localStorage)
+try { if (localStorage.getItem('metaMediathek_view') === 'list') viewMode = 'list'; } catch (e) {}
+
+function seriesKey(r) {
+  const t = (r.topic || '').trim();
+  return t ? normDE(t) : '';
+}
+
+function toggleSeries(key) {
+  if (seriesExpanded.has(key)) seriesExpanded.delete(key);
+  else seriesExpanded.add(key);
+  applySortAndFilter();
+}
+
+function setViewMode(mode) {
+  viewMode = mode === 'list' ? 'list' : 'cards';
+  try { localStorage.setItem('metaMediathek_view', viewMode); } catch (e) {}
+  document.getElementById('viewBtnCards').classList.toggle('active', viewMode === 'cards');
+  document.getElementById('viewBtnList').classList.toggle('active', viewMode === 'list');
+  applySortAndFilter();
+}
 
 // ─── Semantisches Matching: Embedding-Helfer (Stufe 2) ───
 // Aufwandsteilung: Jeder Film wird EINMAL eingebettet (Server cacht in D1),
@@ -2374,7 +2465,7 @@ function renderPosterPlaceholder(item, genres, chClass) {
     <span class="ph-channel">${escHtml(item.channel)}</span>
   </div>`;
 }
-function renderCard(item, idx) {
+function renderCard(item, idx, ep = false) {
   // detectGenres pro Item nur einmal berechnen (vorher: bei jedem Re-Render,
   // d.h. während des Enrichments hunderte Male pro Item)
   const genres = item._genres || (item._genres = detectGenres(item));
@@ -2394,7 +2485,7 @@ function renderCard(item, idx) {
   const audioVariant = item._audio || (item._audio = detectAudioVariant(item));
 
   return `
-    <div class="card" tabindex="0" onclick="showDetail(${idx})">
+    <div class="card${ep ? ' series-episode' : ''}" tabindex="0" onclick="showDetail(${idx})">
       <div class="card-poster-row">
         <div class="card-poster">
           ${tmdb && tmdb.poster_sm
@@ -2473,7 +2564,8 @@ function selectVariantModal(idx, variant) {
   item._activeVariant = variant;
   showDetail(idx);
   const grid = document.getElementById('resultsGrid');
-  if (grid.children[idx]) grid.children[idx].outerHTML = renderCard(item, idx);
+  // In der Listen-Ansicht die Zeile, in der Kachel-Ansicht die Karte erneuern
+  if (grid.children[idx]) grid.children[idx].outerHTML = viewMode === 'list' ? renderRow(item, idx) : renderCard(item, idx);
 }
 
 // Warum-Anzeige: legt die Punkte-Herleitung des Geschmacks-Matches offen.
@@ -2508,6 +2600,8 @@ function renderTasteExplain(item) {
 function showDetail(idx) {
   const item = displayedResults[idx];
   if (!item) return;
+  // Serien-Stapel: Klick klappt die Folgen aus/ein statt ein Modal zu öffnen
+  if (item._series) { toggleSeries(item._series); return; }
   const activeItem = getActiveVariantItem(item);
   const genres = item._genres || (item._genres = detectGenres(item));
   const tmdb = item._tmdb;
@@ -2709,6 +2803,24 @@ function applySortAndFilter() {
     });
   }
 
+  // Herkunfts-Filter: Originalsprache laut TMDB (Feature-Wunsch „französische
+  // Filme"). Ehrliche Grenze: greift nur bei Titeln mit TMDB-Zuordnung —
+  // noch nicht geprüfte bleiben sichtbar (wie beim Rating-Filter), Titel ohne
+  // Zuordnung werden bei aktivem Filter ausgeblendet.
+  const langFilter = document.getElementById('filterLang').value;
+  if (langFilter) {
+    const NORDIC = ['sv', 'da', 'no', 'nb', 'nn', 'fi', 'is'];
+    const KNOWN = ['fr', 'en', 'it', 'es', 'de', ...NORDIC];
+    filtered = filtered.filter(r => {
+      if (r._tmdb === undefined) return true;  // Enrichment läuft noch
+      const l = r._tmdb?.original_language || '';
+      if (!l) return false;
+      if (langFilter === 'nordic') return NORDIC.includes(l);
+      if (langFilter === 'other') return !KNOWN.includes(l);
+      return l === langFilter;
+    });
+  }
+
   // Geschmacks-Ansicht: bei Sortierung nach Match nur Filme zeigen, die
   // mindestens leicht zum Profil passen — sonst folgt auf die Treffer
   // eine lange Liste völlig unpassender Einträge. Sortierung wechseln
@@ -2737,7 +2849,7 @@ function applySortAndFilter() {
   const filteredInfo = document.getElementById('filteredInfo');
   if (curationApplied) {
     // Kuration ist kein Nutzer-Filter — nicht als "(Filter aktiv)" ausweisen
-    filteredInfo.innerHTML = `Aktuelle Auswahl: <strong>${filtered.length}</strong> Sendungen quer durch die Sender — Kurzclips &amp; Nachrichten ausgeblendet. Suche oder Chips zeigen alles.`;
+    filteredInfo.innerHTML = `Startseite: <strong>${filtered.length}</strong> aktuelle Sendungen quer durch die Sender (ohne Kurzclips &amp; Nachrichten). Suche zeigt immer alles.`;
   } else if (filtered.length !== enrichedResults.length) {
     // Klar benennen, WORAUF sich die Zahl bezieht — der Widerspruch
     // "1.708 Treffer, 0 Karten" war der häufigste Verwirrungs-Befund im Nutzertest
@@ -2772,12 +2884,125 @@ function applySortAndFilter() {
   }
   document.getElementById('emptyState').style.display = 'none';
 
-  // Update displayedResults for correct detail modal indexing
-  displayedResults = filtered;
-  // Ein einziges innerHTML-Assignment für das ganze Grid → 1 Reflow pro Render
-  document.getElementById('resultsGrid').innerHTML = filtered.map((r, i) => renderCard(r, i)).join('');
+  renderDisplay(filtered);
   unveilGrid();
   AppEvents.emit('results:rendered', { count: filtered.length });
+}
+
+// ─── Anzeige-Aufbau: Serien-Aggregation + Kachel-/Listen-Ansicht ───
+// Baut aus den gefilterten Treffern die Anzeigeliste: ab SERIES_MIN Folgen
+// derselben Sendung ersetzt EINE Stapel-Kachel die Einzeltreffer; Ausklappen
+// fügt die Folgen direkt dahinter ein. displayedResults enthält die
+// Anzeigeliste (inkl. Serien-Objekte), damit alle idx-basierten Handler
+// (Modal, Fassungs-Chips, Merken) weiter stimmen.
+function renderDisplay(filtered) {
+  const counts = new Map();
+  for (const r of filtered) {
+    const k = seriesKey(r);
+    if (k) counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const display = [];
+  const epFlags = [];  // true = ausgeklappte Folge (optische Kennzeichnung)
+  const grouped = new Set();
+  for (const r of filtered) {
+    const k = seriesKey(r);
+    if (k && counts.get(k) >= SERIES_MIN) {
+      if (grouped.has(k)) continue;
+      grouped.add(k);
+      const eps = filtered.filter(x => seriesKey(x) === k);
+      const channels = new Set(eps.map(e => e.channel));
+      display.push({ _series: k, topic: r.topic, rep: r, episodes: eps, channels });
+      epFlags.push(false);
+      if (seriesExpanded.has(k)) {
+        for (const e of eps) { display.push(e); epFlags.push(true); }
+      }
+    } else {
+      display.push(r);
+      epFlags.push(false);
+    }
+  }
+
+  displayedResults = display;
+  const grid = document.getElementById('resultsGrid');
+  grid.classList.toggle('list-view', viewMode === 'list');
+  // Ein einziges innerHTML-Assignment für das ganze Grid → 1 Reflow pro Render
+  if (viewMode === 'list') {
+    grid.innerHTML = display.map((r, i) => r._series ? renderSeriesRow(r, i) : renderRow(r, i, epFlags[i])).join('');
+  } else {
+    grid.innerHTML = display.map((r, i) => r._series ? renderSeriesCard(r, i) : renderCard(r, i, epFlags[i])).join('');
+  }
+}
+
+// Stapel-Kachel für eine Serie (Kachel-Ansicht)
+function renderSeriesCard(s, idx) {
+  const rep = s.rep;
+  const tmdb = rep._tmdb;
+  const chClass = getChannelClass(rep.channel);
+  const genres = rep._genres || (rep._genres = detectGenres(rep));
+  const open = seriesExpanded.has(s._series);
+  const chLabel = s.channels.size > 1 ? `${rep.channel} +${s.channels.size - 1}` : rep.channel;
+  const newest = Math.max(...s.episodes.map(e => e.timestamp || 0));
+  return `
+    <div class="card series-stack ${open ? 'series-open' : ''}" tabindex="0" onclick="showDetail(${idx})"
+         title="${open ? 'Folgen einklappen' : 'Folgen ausklappen'}">
+      <div class="card-poster-row">
+        <div class="card-poster">
+          ${tmdb && tmdb.poster_sm
+            ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
+            : renderPosterPlaceholder(rep, genres, chClass)}
+        </div>
+        <div class="card-body">
+          <div class="card-header-row">
+            <div class="card-channel ${chClass}">${escHtml(chLabel)}</div>
+            <span class="series-badge">${s.episodes.length} Folgen</span>
+          </div>
+          <div class="card-title" style="margin-top:8px;">${escHtml(s.topic)}</div>
+          <div class="card-topic">Neueste: ${fmtDate(newest)}</div>
+          <div class="series-hint">${open ? '▴ Folgen einklappen' : '▾ Folgen anzeigen'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Kompakte Zeile (Listen-Ansicht)
+function renderRow(item, idx, ep = false) {
+  const tmdb = item._tmdb;
+  const chClass = getChannelClass(item.channel);
+  const rating = tmdb ? fmtRating(tmdb.rating) : null;
+  const match = tasteKeywords ? matchLabel(item._tasteScore || 0) : null;
+  const activeItem = getActiveVariantItem(item);
+  const urlWebsite = safeUrl(activeItem.url_website);
+  const urlVideo = safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video);
+  const title = item._variants ? stripVariantSuffix(item.title) : item.title;
+  const sameAsTopic = normDE(item.topic || '') === normDE(title || '');
+  return `
+    <div class="rrow${ep ? ' episode-row' : ''}" tabindex="0" onclick="showDetail(${idx})">
+      <div class="card-channel ${chClass}">${escHtml(item.channel)}</div>
+      <div class="rrow-title">${escHtml(title)}${!sameAsTopic && item.topic ? ` <span class="rt-topic">· ${escHtml(item.topic)}</span>` : ''}</div>
+      ${match ? `<span class="taste-match ${match.cls}" style="font-size:11px;">${match.text}</span>` : ''}
+      <span class="rrow-rating">${rating ? `★ ${rating}` : ''}</span>
+      <span class="rrow-meta">${fmtDuration(item.duration)} · ${fmtDate(item.timestamp)}</span>
+      <span class="rrow-actions" onclick="event.stopPropagation()">
+        ${urlWebsite ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" title="Beim Sender abspielen">▶</a>` : ''}
+        ${urlVideo ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" title="Videodatei direkt öffnen (Download/VLC)">⬇</a>` : ''}
+      </span>
+    </div>
+  `;
+}
+
+// Serien-Kopfzeile (Listen-Ansicht)
+function renderSeriesRow(s, idx) {
+  const open = seriesExpanded.has(s._series);
+  const chClass = getChannelClass(s.rep.channel);
+  const chLabel = s.channels.size > 1 ? `${s.rep.channel} +${s.channels.size - 1}` : s.rep.channel;
+  return `
+    <div class="rrow series-row" tabindex="0" onclick="showDetail(${idx})">
+      <div class="card-channel ${chClass}">${escHtml(chLabel)}</div>
+      <div class="rrow-title">${open ? '▾' : '▸'} ${escHtml(s.topic)}</div>
+      <span class="series-badge">${s.episodes.length} Folgen</span>
+    </div>
+  `;
 }
 
 function rescoreAndRender() {
@@ -2858,6 +3083,7 @@ function syncStateToURL() {
     set('rating', document.getElementById('filterRating').value, '0');
     set('age', document.getElementById('filterAge').value, '365');
     set('size', document.getElementById('filterSize').value, '200');
+    set('lang', document.getElementById('filterLang').value, '');
     const qs = params.toString();
     history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
   } catch (e) { /* file:// o.ä. — URL-Sync dann einfach aus */ }
@@ -2876,6 +3102,7 @@ function restoreStateFromURL() {
     apply('rating', 'filterRating');
     apply('age', 'filterAge');
     apply('size', 'filterSize');
+    apply('lang', 'filterLang');
   } catch (e) {}
 }
 
@@ -3093,6 +3320,8 @@ function resetAll() {
   document.getElementById('filterAudio').value = 'standard';
   document.getElementById('filterAge').value = '365';
   document.getElementById('filterSize').value = '200';
+  document.getElementById('filterLang').value = '';
+  seriesExpanded.clear();
   document.getElementById('personInfo').style.display = 'none';
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   doSearch();
@@ -3657,6 +3886,12 @@ updateWlCount();
 try {
   document.getElementById('buildTag').textContent =
     'v' + (document.querySelector('meta[name="mm-build"]')?.content || '?');
+} catch (e) {}
+
+// Ansicht-Umschalter: gemerkte Wahl (localStorage) auf die Buttons spiegeln
+try {
+  document.getElementById('viewBtnCards').classList.toggle('active', viewMode === 'cards');
+  document.getElementById('viewBtnList').classList.toggle('active', viewMode === 'list');
 } catch (e) {}
 
 restoreStateFromURL();
