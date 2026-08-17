@@ -17,3 +17,6 @@ CREATE INDEX IF NOT EXISTS idx_feedback_build ON feedback(build);
 --   CREATE INDEX IF NOT EXISTS idx_feedback_build ON feedback(build);
 -- Ältere Zeilen ohne Spalte nachtragen (Version steckt im JSON der session_start-Events):
 --   UPDATE feedback SET build = json_extract(body, '$.build') WHERE build IS NULL;
+
+-- Redeploy-Trigger 2026-08-17: GitHub-Webhook-Stoerung verschluckte das Push-Event des PR-#6-Merges;
+-- dieser Commit stoesst den Cloudflare-Pages-Build fuer main neu an. Kein inhaltlicher Effekt.
