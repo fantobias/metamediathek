@@ -27,7 +27,8 @@ export async function onRequestGet(context) {
   }
 
   const cache = caches.default;
-  const cacheKey = new Request(url.toString(), { method: 'GET' });
+  // cachev=2: entwertet gecachte Antworten mit unkodierter Bild-URL (Entity-Fix)
+  const cacheKey = new Request(url.toString() + '&cachev=2', { method: 'GET' });
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
 
@@ -41,6 +42,8 @@ export async function onRequestGet(context) {
     if (page.ok) {
       const html = (await page.text()).slice(0, 400000);
       image = extractMeta(html, 'og:image');
+      // HTML-Entities in der Bild-URL dekodieren (ARTE: "&amp;" in der Query)
+      if (image) image = image.replace(/&amp;/g, '&').replace(/&#0*38;/g, '&').replace(/&#x0*26;/gi, '&');
       description = extractMeta(html, 'og:description');
       if (!description) {
         const m = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i);
