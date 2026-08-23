@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-23.2">
+<meta name="mm-build" content="2026-08-23.3">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -203,6 +203,7 @@
   .rrow-actions { flex: 0 0 auto; display: flex; gap: 6px; }
   .rrow-actions a { text-decoration: none; font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--text); }
   .rrow-actions a:hover { background: var(--surface2); }
+  .rrow-actions .bookmark-btn { font-size: 12px; padding: 3px 8px; }
   .rrow.series-row { font-weight: 600; }
   .rrow.episode-row { padding-left: 28px; }
   @media (max-width: 700px) {
@@ -2569,7 +2570,7 @@ function renderCard(item, idx, ep = false) {
         ${urlVideo
           ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary btn-direct" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">Direktlink</a>`
           : ''}
-        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
+        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
           📌
         </button>
       </div>
@@ -2982,7 +2983,9 @@ function renderSeriesCard(s, idx) {
         <div class="card-poster">
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
-            : renderPosterPlaceholder(rep, genres, chClass)}
+            : renderPosterPlaceholder(rep, genres, chClass) + (API_MODE && safeUrl(rep.url_website)
+              ? renderOgPoster(safeUrl(rep.url_website))
+              : '')}
         </div>
         <div class="card-body">
           <div class="card-header-row">
@@ -3019,6 +3022,7 @@ function renderRow(item, idx, ep = false) {
       <span class="rrow-actions" onclick="event.stopPropagation()">
         ${urlWebsite ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" title="Beim Sender abspielen">▶</a>` : ''}
         ${urlVideo ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" title="Videodatei direkt öffnen (Download/VLC)">⬇</a>` : ''}
+        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">📌</button>
       </span>
     </div>
   `;
@@ -3563,6 +3567,21 @@ async function searchPersonInMediathek(query, seq) {
                 return hay.includes(pName) || (pLast.length >= 4 && hay.includes(pLast));
               });
             }
+            // FALSCHTREFFER-FILTER: Die MVW-Wortsuche matcht Wort-Präfixe
+            // („Unter Bauern" fand „...Untertitel" + „...Bauern...") und spülte
+            // fremde Sendungen herein, die dann Poster/Bewertung/Inhalt des
+            // Credits erbten (3x „Unter Bauern"-Poster auf Bauern-Dokus).
+            // Behalten nur Treffer, deren Titel ODER Topic dem Credit-Titel
+            // (deutsch oder Original) wirklich ähnelt.
+            if (creditForFilter) {
+              const names = [creditForFilter.title, creditForFilter.original_title].filter(Boolean);
+              hits = hits.filter(r => {
+                const clean = stripVariantSuffix(r.title || '');
+                return names.some(n =>
+                  titleSimilarity(n, { title: clean }) >= 0.5 ||
+                  titleSimilarity(n, { title: r.topic || '' }) >= 0.5);
+              });
+            }
             for (const r of hits) {
               const credit = creditMap[title];
               if (credit) {
@@ -3776,10 +3795,12 @@ function toggleBookmark(idx, person) {
     document.getElementById('bmPersonsList').innerHTML = renderBmPersonRows(item);
   }
 
-  // Update the bookmark button styling without full re-render
-  const cards = document.querySelectorAll('.bookmark-btn');
-  if (cards[idx]) {
-    cards[idx].classList.toggle('bookmarked', isBookmarked(item));
+  // Update the bookmark button styling without full re-render.
+  // Per data-bmidx statt Positions-Index: Serien-Stapel haben keinen
+  // Merken-Button, der NodeList-Index lief dann auseinander.
+  const btn = document.querySelector(`.bookmark-btn[data-bmidx="${idx}"]`);
+  if (btn) {
+    btn.classList.toggle('bookmarked', isBookmarked(item));
   }
 
   renderWatchlist();
