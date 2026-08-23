@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-17.4">
+<meta name="mm-build" content="2026-08-23.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -782,13 +782,6 @@
   <p>Beschreibe, was du gerne schaust – die App bewertet dann jeden Film danach, wie gut er zu dir passt.</p>
   <textarea class="taste-textarea" id="tasteProfile"
     placeholder="z.B.: Ich mag skandinavische Krimis und düstere Thriller mit komplexen Charakteren. Gerne Gesellschaftskritik, politische Intrigen oder True Crime. Keine Romantik-Komödien oder Heimatfilme. Dokumentationen über Natur und Wissenschaft finde ich auch spannend."></textarea>
-  <div class="taste-examples">
-    <span class="taste-example" onclick="setTasteExample('krimi')">Krimi-Fan</span>
-    <span class="taste-example" onclick="setTasteExample('doku')">Doku-Liebhaber</span>
-    <span class="taste-example" onclick="setTasteExample('arthouse')">Arthouse</span>
-    <span class="taste-example" onclick="setTasteExample('family')">Familienkino</span>
-    <span class="taste-example" onclick="setTasteExample('action')">Action & Thriller</span>
-  </div>
   <div class="taste-actions">
     <button class="btn btn-gold btn-sm" onclick="applyTasteProfile()">🎯 Profil anwenden</button>
     <button class="btn btn-secondary btn-sm" onclick="clearTasteProfile()">Löschen</button>
@@ -930,6 +923,41 @@ function toggleSeries(key) {
   if (seriesExpanded.has(key)) seriesExpanded.delete(key);
   else seriesExpanded.add(key);
   applySortAndFilter();
+}
+
+// Folgen-Nummer aus dem Titel lesen: "S09/E01", "Staffel 2 … Folge 7",
+// "(2/10)", "Folge 7", "Episode 7". Staffel wiegt 10000, damit S2/E1 nach
+// S1/E12 kommt. null = keine Nummer erkennbar.
+function episodeNum(item) {
+  const t = item.title || '';
+  let m = t.match(/\bS\s*(\d{1,3})\s*\/?\s*E\s*(\d{1,4})\b/i);
+  if (m) return parseInt(m[1]) * 10000 + parseInt(m[2]);
+  m = t.match(/Staffel\s*(\d{1,3})\D{0,20}?Folge\s*(\d{1,4})/i);
+  if (m) return parseInt(m[1]) * 10000 + parseInt(m[2]);
+  m = t.match(/\((\d{1,4})\s*\/\s*\d{1,4}\)/);
+  if (m) return parseInt(m[1]);
+  m = t.match(/(?:Folge|Episode)\s*(\d{1,4})/i);
+  if (m) return parseInt(m[1]);
+  return null;
+}
+
+// Folgen im aufgeklappten Stapel sortieren: Die Ausstrahlungs-Reihenfolge der
+// Sender ist bei Serien oft wirr (Wiederholungen quer durch die Staffeln).
+// Sobald mindestens die Hälfte der Folgen eine erkennbare Nummer trägt, wird
+// nach Staffel/Folge aufsteigend sortiert (Unnummeriertes ans Ende, stabil);
+// sonst bleibt die übergeordnete Sortierung unangetastet.
+function sortEpisodes(eps) {
+  const nums = eps.map(episodeNum);
+  const withNum = nums.filter(n => n !== null).length;
+  if (withNum < Math.max(2, Math.ceil(eps.length / 2))) return eps;
+  return eps.map((e, i) => ({ e, n: nums[i], i }))
+    .sort((a, b) => {
+      if (a.n === null && b.n === null) return a.i - b.i;
+      if (a.n === null) return 1;
+      if (b.n === null) return -1;
+      return (a.n - b.n) || (a.i - b.i);
+    })
+    .map(x => x.e);
 }
 
 function setViewMode(mode) {
@@ -2914,7 +2942,7 @@ function renderDisplay(filtered) {
       display.push({ _series: k, topic: r.topic, rep: r, episodes: eps, channels });
       epFlags.push(false);
       if (seriesExpanded.has(k)) {
-        for (const e of eps) { display.push(e); epFlags.push(true); }
+        for (const e of sortEpisodes(eps)) { display.push(e); epFlags.push(true); }
       }
     } else {
       display.push(r);
@@ -3462,8 +3490,14 @@ async function searchPersonInMediathek(query, seq) {
               genre_ids: item.genre_ids || [],
               original_title: origTitle || '',
               popularity: item.popularity || 0,
-              roles: []
+              roles: [],
+              // Folgenzahl der Person in diesem Format (nur TV): unterscheidet
+              // Gastauftritt (1–3 Folgen) von Hauptrolle/Stammbesetzung
+              episode_count: item.episode_count || 0
             };
+          }
+          if ((item.episode_count || 0) > creditMap[title].episode_count) {
+            creditMap[title].episode_count = item.episode_count;
           }
           const roleInfo = role === 'cast'
             ? (item.character ? `als ${item.character}` : 'Darsteller')
@@ -3508,7 +3542,23 @@ async function searchPersonInMediathek(query, seq) {
           // vorher scheiterten alle Batches stumm, wenn der Proxy kippte
           const data = await fetchMediathek(payload);
           if (data?.result?.results) {
-            for (const r of data.result.results) {
+            let hits = data.result.results;
+            const creditForFilter = creditMap[title];
+            // GASTAUFTRITTE (TV, ≤3 Folgen laut TMDB — z.B. Talkshow-Besuch):
+            // Die Titelsuche liefert beliebige Folgen des Formats. Behalten nur
+            // Folgen, in deren Titel/Beschreibung die Person vorkommt (Gäste
+            // stehen dort i.d.R. namentlich). Hauptrollen/Stammbesetzung und
+            // Filme bleiben ungefiltert — dort gehört die Person zu jeder Folge.
+            if (creditForFilter && creditForFilter.media_type === 'tv'
+                && creditForFilter.episode_count > 0 && creditForFilter.episode_count <= 3) {
+              const pName = normDE(person.name);
+              const pLast = pName.split(/\s+/).pop();
+              hits = hits.filter(r => {
+                const hay = normDE(`${r.title} ${r.description || ''}`);
+                return hay.includes(pName) || (pLast.length >= 4 && hay.includes(pLast));
+              });
+            }
+            for (const r of hits) {
               const credit = creditMap[title];
               if (credit) {
                 r._tmdb = {
