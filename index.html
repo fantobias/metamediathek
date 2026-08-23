@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-23.1">
+<meta name="mm-build" content="2026-08-23.2">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -937,6 +937,11 @@ function episodeNum(item) {
   m = t.match(/\((\d{1,4})\s*\/\s*\d{1,4}\)/);
   if (m) return parseInt(m[1]);
   m = t.match(/(?:Folge|Episode)\s*(\d{1,4})/i);
+  if (m) return parseInt(m[1]);
+  // Letzter Versuch: nackte Nummer am Titelende — "Sturm der Liebe (1614)",
+  // "Rote Rosen 3712". Greift nur innerhalb einer Serien-Gruppe (≥ Hälfte
+  // nummeriert), daher ist die Jahreszahl-Verwechslung praktisch unkritisch.
+  m = t.match(/\(?(\d{1,4})\s*\)?\s*$/);
   if (m) return parseInt(m[1]);
   return null;
 }
