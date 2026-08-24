@@ -2,7 +2,8 @@
 // Key liegt als Secret TMDB_API_KEY im Pages-Projekt (Settings → Variables and Secrets).
 // movie/N und tv/N: Detailabruf (append_to_response=keywords,credits) für
 // Geschmacks-Scoring (Schlagwörter, Regie/Cast) und Modal-Anzeige.
-const ALLOWED = /^(search\/(movie|tv|person)|person\/\d+\/combined_credits|movie\/\d+|tv\/\d+)$/;
+// …/recommendations und …/similar: „Ein Film wie XY"-Suche.
+const ALLOWED = /^(search\/(movie|tv|person)|person\/\d+\/combined_credits|movie\/\d+(\/(recommendations|similar))?|tv\/\d+(\/(recommendations|similar))?)$/;
 
 export async function onRequestGet(context) {
   const params = context.params;
