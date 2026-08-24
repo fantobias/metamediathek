@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-23.4">
+<meta name="mm-build" content="2026-08-24.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -902,6 +902,9 @@ let lastResults = [];       // raw mediathek results
 let enrichedResults = [];   // with TMDB data + taste scores (master list)
 let displayedResults = [];  // currently displayed (after filter/sort)
 let tmdbCache = {};         // "topic|||title" -> TMDB-Ergebnis (oder null = kein Match)
+// „Ein Film wie …"-Modus: gesetzt, solange die Ergebnisliste TMDB-Empfehlungen
+// zu einer Freitext-Referenz zeigt ({label, checked}); null = normale Suche
+let similarRef = null;
 let tasteKeywords = null;   // parsed taste profile
 let searchSeq = 0;          // Generation-Token: entwertet veraltete Such-Antworten (Race-Schutz)
 let profileVec = null;      // Int8Array: Embedding des Profils (semantisches Matching)
@@ -2883,7 +2886,7 @@ function applySortAndFilter() {
   // Personen-Treffer (_fromPerson) passieren immer: Der Name steht meist nicht im Filmtext.
   if (searchText) {
     filtered = filtered.filter(r => {
-      if (r._fromPerson) return true;
+      if (r._fromPerson || r._fromSimilar) return true;
       const haystack = normDE(`${r.channel} ${r.topic} ${r.title} ${r.description || ''} ${r._senderDesc || ''} ${r._tmdb?.overview || ''}`);
       const words = normDE(searchText).split(/\s+/);
       return words.every(w => haystack.includes(w));
@@ -2939,11 +2942,17 @@ function applySortAndFilter() {
     filtered.sort((a, b) => ((b._tmdb?.rating || 0) - (a._tmdb?.rating || 0)));
   } else if (sortVal === 'taste_desc') {
     filtered.sort((a, b) => ((b._tasteScore || 0) - (a._tasteScore || 0)));
+  } else if (similarRef && sortVal === 'timestamp_desc') {
+    // „Film wie …": Standard-Sortierung = Ähnlichkeits-Rang der TMDB-Empfehlung
+    // (Gruppierung kann die Reihenfolge verschieben — hier wiederherstellen)
+    filtered.sort((a, b) => ((a._simRank ?? 999) - (b._simRank ?? 999)) || ((b.timestamp || 0) - (a.timestamp || 0)));
   }
 
   // Update UI counts
   const filteredInfo = document.getElementById('filteredInfo');
-  if (curationApplied) {
+  if (similarRef) {
+    filteredInfo.innerHTML = `Ähnlich wie: <strong>${escHtml(similarRef.label)}</strong> — ${filtered.length} von ${similarRef.checked} TMDB-Empfehlungen aktuell in den Mediatheken. Falls der falsche Referenzfilm erkannt wurde: Jahr oder Originaltitel mit angeben.`;
+  } else if (curationApplied) {
     // Kuration ist kein Nutzer-Filter — nicht als "(Filter aktiv)" ausweisen
     filteredInfo.innerHTML = `Startseite: <strong>${filtered.length}</strong> aktuelle Sendungen quer durch die Sender (ohne Kurzclips &amp; Nachrichten). Suche zeigt immer alles.`;
   } else if (filtered.length !== enrichedResults.length) {
@@ -3210,6 +3219,7 @@ function restoreStateFromURL() {
 async function doSearch(resetOffset = true, keepChips = false) {
   if (resetOffset) currentOffset = 0;
   feedView = false; // jede echte Suche verlässt die Feed-Ansicht
+  similarRef = null; // normale Suche beendet den „Film wie …"-Modus
 
   if (!keepChips) {
     // Chip-Zustand bleibt erhalten, solange die Suchanfrage noch der Chip-Term
@@ -3439,10 +3449,145 @@ function handleSearch() {
   doCombinedSearch();
 }
 
+// ─── „Ein Film wie …": Ähnlichkeitssuche über eine Freitext-Referenz ───
+// Die Referenz muss NICHT in den Mediatheken stehen — sie wird bei TMDB
+// aufgelöst, deren Empfehlungen (verhaltensbasiert) geholt und jede Empfehlung
+// gegen den Mediatheken-Bestand geprüft. Nur Verfügbares wird angezeigt.
+// Bewusst NUR explizite Formen — ein nacktes „wie" kommt in normalen
+// Titelsuchen vor („Wie werden Bayerns Bauern…").
+function parseSimilarQuery(q) {
+  let m = q.match(/^(?:ein(?:en)?\s+)?(?:film(?:e)?|serien?)\s+wie[:\s]\s*(.{2,80})$/i);
+  if (!m) m = q.match(/^(?:ähnlich(?:e|es)?\s+)wie[:\s]\s*(.{2,80})$/i);
+  if (!m) m = q.match(/^wie:\s*(.{2,80})$/i);
+  return m ? m[1].trim().replace(/[?!.]+\s*$/, '') : null;
+}
+
+async function searchSimilarFilms(refName) {
+  feedView = false;
+  currentOffset = 0;
+  const seq = ++searchSeq;
+  showLoading(`Referenz „${refName}" bei TMDB auflösen…`);
+  document.getElementById('personInfo').style.display = 'none';
+  syncStateToURL();
+
+  // 1) Referenz auflösen — Film UND Serie probieren, bessere Titel-Nähe gewinnt.
+  // Angehängtes Jahr („Fargo 1996") als Disambiguierung an TMDB durchreichen
+  let refQuery = refName, refYearHint = '';
+  const ym = refName.match(/^(.{2,})[\s(]+((?:19|20)\d{2})\)?$/);
+  if (ym) { refQuery = ym[1].trim(); refYearHint = ym[2]; }
+  const [movies, shows] = await Promise.all([
+    fetchJsonSafe(tmdbApiUrl('search/movie', `language=de-DE&region=DE&query=${encodeURIComponent(refQuery)}${refYearHint ? '&year=' + refYearHint : ''}&page=1`)).then(d => (d && d.results) || []),
+    fetchJsonSafe(tmdbApiUrl('search/tv', `language=de-DE&query=${encodeURIComponent(refQuery)}${refYearHint ? '&first_air_date_year=' + refYearHint : ''}&page=1`)).then(d => (d && d.results) || [])
+  ]);
+  if (seq !== searchSeq) return;
+  const bestM = pickBest(movies, refQuery);
+  const bestT = pickBest(shows, refQuery);
+  const simM = bestM ? titleSimilarity(refQuery, bestM) : 0;
+  const simT = bestT ? titleSimilarity(refQuery, bestT) : 0;
+  let ref = null, refType = 'movie';
+  if (simM >= simT && simM >= 0.3) { ref = bestM; }
+  else if (simT >= 0.3) { ref = bestT; refType = 'tv'; }
+  if (!ref) {
+    document.getElementById('loadingState').style.display = 'none';
+    similarRef = null;
+    enrichedResults = []; displayedResults = [];
+    showEmpty(`„${refName}" wurde bei TMDB nicht gefunden — bitte den Titel prüfen (auch der Originaltitel funktioniert).`);
+    return;
+  }
+  const refTitle = ref.title || ref.name || refName;
+  const refYear = ((refType === 'tv' ? ref.first_air_date : ref.release_date) || '').slice(0, 4);
+
+  showLoading(`Empfehlungen zu „${refTitle}" holen…`);
+  // 2) Empfehlungen + Ähnliche holen. recommendations zuerst — sie sind
+  // verhaltensbasiert („wer X mochte…") und treffen besser als reine Genre-Nähe
+  const [rec, sim] = await Promise.all([
+    fetchJsonSafe(tmdbApiUrl(`${refType}/${ref.id}/recommendations`, 'language=de-DE&page=1')),
+    fetchJsonSafe(tmdbApiUrl(`${refType}/${ref.id}/similar`, 'language=de-DE&page=1'))
+  ]);
+  if (seq !== searchSeq) return;
+  const seenIds = new Set([ref.id]);
+  const recs = [];
+  for (const r of [...(rec?.results || []), ...(sim?.results || [])]) {
+    if (!r || !r.id || seenIds.has(r.id)) continue;
+    seenIds.add(r.id);
+    recs.push(r);
+  }
+  const candidates = recs.slice(0, 24);
+  // Die Referenz selbst zuerst prüfen — vielleicht steht sie ja doch im Bestand
+  candidates.unshift(ref);
+
+  // 3) Verfügbarkeits-Check: jede Empfehlung in den Mediatheken suchen.
+  // Gleicher Ähnlichkeits-Filter wie bei der Personensuche — die MVW-Wortsuche
+  // matcht Wort-Präfixe und würde sonst Fremdes hereinspülen.
+  const statusEl = document.getElementById('loadingSub');
+  const found = [];
+  const seenKeys = new Set();
+  const BATCH = 6;
+  for (let i = 0; i < candidates.length; i += BATCH) {
+    if (seq !== searchSeq) return;
+    const batch = candidates.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (cand, bi) => {
+      const rank = i + bi;
+      const names = [...new Set([cand.title || cand.name, cand.original_title || cand.original_name].filter(Boolean))];
+      for (const name of names) {
+        try {
+          const data = await fetchMediathek({
+            queries: [{ fields: ['title', 'topic'], query: name }],
+            sortBy: 'timestamp', sortOrder: 'desc',
+            future: false, offset: 0, size: 4,
+            duration_min: cand.first_air_date ? 300 : 1200
+          });
+          const hits = (data?.result?.results || []).filter(h => {
+            const clean = stripVariantSuffix(h.title || '');
+            return names.some(n =>
+              titleSimilarity(n, { title: clean }) >= 0.5 ||
+              titleSimilarity(n, { title: h.topic || '' }) >= 0.5);
+          });
+          for (const h of hits) {
+            const key = getItemKey(h);
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+            h._tmdb = buildTmdbResult(cand, cand.first_air_date ? 'tv' : 'movie');
+            h._tasteScore = scoreTaste(h, h._tmdb, tasteKeywords);
+            h._simRank = rank;
+            h._fromSimilar = true; // passiert den Client-Textfilter (Suchtext ≠ Filmtitel)
+            found.push(h);
+          }
+        } catch (e) { /* einzelner Kandidat darf die Suche nicht kippen */ }
+      }
+    }));
+    statusEl.textContent = `„${refTitle}": ${Math.min(i + BATCH, candidates.length)}/${candidates.length} Empfehlungen geprüft, ${found.length} in Mediatheken…`;
+  }
+  if (seq !== searchSeq) return;
+
+  document.getElementById('loadingState').style.display = 'none';
+  similarRef = { label: refYear ? `${refTitle} (${refYear})` : refTitle, checked: candidates.length };
+
+  totalResults = found.length;
+  document.getElementById('resultCountTotal').textContent = String(found.length);
+  if (found.length === 0) {
+    enrichedResults = []; displayedResults = [];
+    showEmpty(`Referenz erkannt: „${refTitle}"${refYear ? ` (${refYear})` : ''} — aber keine der ${candidates.length} TMDB-Empfehlungen ist gerade in einer Mediathek verfügbar.`);
+    updatePagination();
+    return;
+  }
+  found.sort((a, b) => (a._simRank - b._simRank) || ((b.timestamp || 0) - (a.timestamp || 0)));
+  lastResults = found;
+  enrichedResults = groupVariants(found);
+  applySortAndFilter();
+  updatePagination();
+  AppEvents.emit('search:completed', { total: found.length, shown: enrichedResults.length });
+}
+
 // ─── Combined Search: Title + Person in parallel ───
 async function doCombinedSearch() {
   const query = document.getElementById('searchInput').value.trim();
   if (!query) { doSearch(); return; }
+
+  // „Ein Film wie …" / „wie: …" → Ähnlichkeitssuche statt Titelsuche
+  const simRefName = parseSimilarQuery(query);
+  if (simRefName) { return searchSimilarFilms(simRefName); }
+  similarRef = null;
 
   feedView = false;
   currentOffset = 0;
