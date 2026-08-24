@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-23.3">
+<meta name="mm-build" content="2026-08-23.4">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -2144,7 +2144,64 @@ function groupVariants(results) {
       out.push(primary);
     }
   }
+  return groupChannelDupes(out);
+}
+
+// Sender-Doubletten: derselbe Film läuft oft in mehreren Mediatheken (z.B.
+// "Glück auf halber Treppe" bei ARD UND SWR). Solche Einträge werden zu EINER
+// Kachel zusammengefasst; Sender-Chips auf der Kachel schalten zwischen den
+// Listings um. Default ist das jüngste Listing. Kriterium: identischer
+// normalisierter Titel + ähnliche Laufzeit (gleiche Toleranz wie Fassungen) —
+// das Topic darf abweichen, weil jeder Sender eigene Rubriken pflegt.
+function groupChannelDupes(results) {
+  const groups = new Map();
+  const out = [];
+  for (const item of results) {
+    const t = normDE(stripVariantSuffix(item.title || ''));
+    // Kurze Allerwelts-Titel und Einträge ohne Laufzeit nicht riskieren
+    if (t.length < 6 || !item.duration) { item._chAlts = null; out.push(item); continue; }
+    if (!groups.has(t)) groups.set(t, []);
+    groups.get(t).push(item);
+  }
+  for (const list of groups.values()) {
+    // Nur ähnliche Laufzeiten als dasselbe Werk werten (Trailer/Clips bleiben eigenständig)
+    const clusters = [];
+    for (const item of list) {
+      const c = clusters.find(cl => Math.abs((cl[0].duration || 0) - (item.duration || 0)) <= VARIANT_DURATION_TOLERANCE);
+      if (c) c.push(item); else clusters.push([item]);
+    }
+    for (const cluster of clusters) {
+      // Pro Sender nur das jüngste Listing behalten
+      const byCh = new Map();
+      for (const it of cluster) {
+        const prev = byCh.get(it.channel);
+        if (!prev || (it.timestamp || 0) > (prev.timestamp || 0)) byCh.set(it.channel, it);
+      }
+      const alts = [...byCh.values()].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      const shared = alts.length > 1 ? alts : null;
+      for (const a of alts) a._chAlts = shared; // Array an allen Alternativen, damit Umschalten stabil bleibt
+      out.push(alts[0]); // jüngstes Listing als Default
+    }
+  }
   return out;
+}
+
+// Sender auf der Kachel/Zeile wechseln: zeigt das Listing des gewählten Senders
+function selectChannelAlt(idx, channel) {
+  const cur = displayedResults[idx];
+  if (!cur || !cur._chAlts) return;
+  const next = cur._chAlts.find(a => a.channel === channel);
+  if (!next || next === cur) return;
+  // Gleiches Werk: TMDB-Daten und Geschmacks-Score mitnehmen, statt neu zu laden
+  if (next._tmdb === undefined && cur._tmdb !== undefined) next._tmdb = cur._tmdb;
+  if (next._tasteScore === undefined && cur._tasteScore !== undefined) next._tasteScore = cur._tasteScore;
+  displayedResults[idx] = next;
+  const ei = enrichedResults.indexOf(cur);
+  if (ei >= 0) enrichedResults[ei] = next; // Wahl übersteht Re-Renders/Sortierungen
+  const grid = document.getElementById('resultsGrid');
+  if (grid.children[idx]) {
+    grid.children[idx].outerHTML = viewMode === 'list' ? renderRow(next, idx) : renderCard(next, idx);
+  }
 }
 
 // Liefert das Item der aktuell gewählten Fassung einer Gruppe (oder das Item selbst)
@@ -2563,6 +2620,11 @@ function renderCard(item, idx, ep = false) {
         <span class="f-label">Fassung</span>
         <span class="f-chip single">${VARIANT_LABELS[audioVariant] || audioVariant}</span>
       </div>` : '')}
+      ${item._chAlts ? `
+      <div class="fassungen">
+        <span class="f-label">Sender</span>
+        ${item._chAlts.map(a => `<span class="f-chip ${a === item ? 'active' : ''}" role="button" tabindex="0" title="Listing vom ${escAttr(fmtDate(a.timestamp))}" onclick="event.stopPropagation(); selectChannelAlt(${idx}, '${escAttr(a.channel)}')">${escHtml(a.channel)}</span>`).join('')}
+      </div>` : ''}
       <div class="card-actions" onclick="event.stopPropagation()">
         ${urlWebsite
           ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ Ansehen</a>`
@@ -3014,7 +3076,9 @@ function renderRow(item, idx, ep = false) {
   const sameAsTopic = normDE(item.topic || '') === normDE(title || '');
   return `
     <div class="rrow${ep ? ' episode-row' : ''}" tabindex="0" onclick="showDetail(${idx})">
-      <div class="card-channel ${chClass}">${escHtml(item.channel)}</div>
+      ${item._chAlts
+        ? `<div class="card-channel ${chClass}" role="button" title="Auch bei: ${escAttr(item._chAlts.filter(a => a !== item).map(a => a.channel).join(', '))} — klicken wechselt den Sender" onclick="event.stopPropagation(); selectChannelAlt(${idx}, '${escAttr((item._chAlts[(item._chAlts.indexOf(item) + 1) % item._chAlts.length]).channel)}')">${escHtml(item.channel)} ⇄</div>`
+        : `<div class="card-channel ${chClass}">${escHtml(item.channel)}</div>`}
       <div class="rrow-title">${escHtml(title)}${!sameAsTopic && item.topic ? ` <span class="rt-topic">· ${escHtml(item.topic)}</span>` : ''}</div>
       ${match ? `<span class="taste-match ${match.cls}" style="font-size:11px;">${match.text}</span>` : ''}
       <span class="rrow-rating">${rating ? `★ ${rating}` : ''}</span>

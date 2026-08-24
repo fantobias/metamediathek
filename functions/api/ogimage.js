@@ -20,7 +20,9 @@ export async function onRequestGet(context) {
   }
 
   const cache = caches.default;
-  const cacheKey = new Request(url.toString(), { method: 'GET' });
+  // v=2 im Cache-Key: entwertet die bis 7 Tage gecachten Redirects mit
+  // unkodiertem "&amp;" aus der Zeit vor dem Entity-Fix
+  const cacheKey = new Request(url.toString() + '&cachev=2', { method: 'GET' });
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
 
@@ -31,7 +33,11 @@ export async function onRequestGet(context) {
       const html = (await page.text()).slice(0, 400000);
       let m = html.match(/<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i);
       if (!m) m = html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']/i);
-      if (m) imgUrl = m[1];
+      // HTML-Entities in der URL dekodieren — ARTE schreibt "&amp;" in die
+      // Query, das CDN antwortete darauf mit einer 400/404-GRAFIK (SVG mit
+      // Status 400, aber Content-Type image/*), die der Browser anzeigte
+      // statt onerror auszuloesen (Befund 23.08.: "404 Bad Request"-Kacheln)
+      if (m) imgUrl = m[1].replace(/&amp;/g, '&').replace(/&#0*38;/g, '&').replace(/&#x0*26;/gi, '&');
     }
   } catch (e) {}
 
