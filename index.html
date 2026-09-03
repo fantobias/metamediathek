@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-08-24.1">
+<meta name="mm-build" content="2026-09-03.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -163,6 +163,72 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 16px; padding: 24px 30px;
+  }
+
+  /* ─── Startseiten-Rows (horizontale Reihen im Streaming-Muster) ─── */
+  .home-rows { padding: 20px 0 0 30px; }
+  .hrow { margin-bottom: 26px; }
+  .hrow-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 10px; padding-right: 30px;
+  }
+  .hrow-title { font-size: 17px; font-weight: 700; }
+  .hrow-hint { font-size: 12px; color: var(--text-dim); }
+  .hrow-action {
+    margin-left: auto; font-size: 12px; color: var(--text-dim);
+    background: none; border: none; cursor: pointer; padding: 4px 8px;
+  }
+  .hrow-action:hover { color: var(--text); }
+  .hrow-scroller {
+    display: flex; gap: 12px; overflow-x: auto; padding: 4px 30px 8px 0;
+    scroll-snap-type: x proximity; scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .htile {
+    flex: 0 0 auto; width: 230px; scroll-snap-align: start;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s;
+    text-decoration: none; color: var(--text); display: block;
+  }
+  .htile:hover, .htile:focus-visible { transform: translateY(-3px); border-color: var(--accent); outline: none; }
+  .htile-media {
+    position: relative; aspect-ratio: 16 / 9; background: var(--surface2); overflow: hidden;
+  }
+  .htile-media > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .htile-media .poster-ph { min-height: 0; position: absolute; inset: 0; }
+  .htile-media .poster-ph .ph-icon { font-size: 30px; }
+  .htile-ch {
+    position: absolute; top: 6px; left: 6px; z-index: 2;
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+    background: rgba(15,17,23,0.75); letter-spacing: 0.4px;
+  }
+  .htile-count {
+    position: absolute; bottom: 6px; right: 6px; z-index: 2;
+    font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+    background: rgba(15,17,23,0.75); color: var(--text);
+  }
+  .htile-title {
+    font-size: 13px; font-weight: 600; line-height: 1.3;
+    padding: 8px 10px 2px; min-height: 2.6em;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .htile-sub {
+    font-size: 11px; color: var(--text-dim); padding: 0 10px 10px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .htile-sub .htile-warn { color: var(--red); }
+  .home-grid-head {
+    font-size: 17px; font-weight: 700; padding: 4px 30px 0;
+  }
+  @media (max-width: 768px) {
+    .home-rows { padding-left: 12px; }
+    .hrow { margin-bottom: 18px; }
+    .hrow-head { padding-right: 12px; }
+    .hrow-scroller { padding-right: 12px; }
+    .htile { width: 165px; }
+    .htile-title { font-size: 12px; }
+    .home-grid-head { padding: 4px 12px 0; }
   }
 
   /* Ansicht-Umschalter (Kacheln/Liste) */
@@ -802,6 +868,8 @@
 </div>
 
 <div id="content">
+  <div class="home-rows" id="homeRows" hidden></div>
+  <div class="home-grid-head" id="homeGridHead" hidden>Alle aktuellen Sendungen</div>
   <div class="loading" id="loadingState" style="display:none;">
     <div class="spinner"></div>
     <div>Durchsuche alle Mediatheken…</div>
@@ -2630,10 +2698,10 @@ function renderCard(item, idx, ep = false) {
       </div>` : ''}
       <div class="card-actions" onclick="event.stopPropagation()">
         ${urlWebsite
-          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ Ansehen</a>`
+          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" onclick="recordRecentIdx(${idx})" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ Ansehen</a>`
           : ''}
         ${urlVideo
-          ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary btn-direct" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">Direktlink</a>`
+          ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary btn-direct" onclick="recordRecentIdx(${idx})" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">Direktlink</a>`
           : ''}
         <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
           📌
@@ -2760,9 +2828,9 @@ function showDetail(idx) {
     ${renderTasteExplain(item)}
     <div class="actions">
       ${safeUrl(activeItem.url_website)
-        ? `<a href="${escAttr(safeUrl(activeItem.url_website))}" target="_blank" rel="noopener" class="btn btn-primary" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ In der Mediathek ansehen</a>` : ''}
+        ? `<a href="${escAttr(safeUrl(activeItem.url_website))}" target="_blank" rel="noopener" class="btn btn-primary" onclick="recordRecentIdx(${idx})" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ In der Mediathek ansehen</a>` : ''}
       ${(safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video))
-        ? `<a href="${escAttr(safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">⬇ Direktlink (Download/VLC)</a>` : ''}
+        ? `<a href="${escAttr(safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary" onclick="recordRecentIdx(${idx})" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">⬇ Direktlink (Download/VLC)</a>` : ''}
       ${safeUrl(activeItem.url_subtitle)
         ? `<a href="${escAttr(safeUrl(activeItem.url_subtitle))}" target="_blank" rel="noopener" class="btn btn-secondary">💬 Untertitel</a>` : ''}
       ${tmdb ? `<a href="https://www.themoviedb.org/${tmdb.tmdb_type || 'movie'}/${encodeURIComponent(tmdb.tmdb_id)}" target="_blank" rel="noopener" class="tmdb-link">↗ Auf TMDB ansehen</a>` : ''}
@@ -2974,6 +3042,7 @@ function applySortAndFilter() {
 
   unveilGrid();
   if (filtered.length === 0) {
+    updateHomeRows(false);
     displayedResults = [];
     document.getElementById('resultsGrid').innerHTML = '';
     // Unterscheidung: keine Server-Ergebnisse vs. alles weggefiltert
@@ -2990,6 +3059,7 @@ function applySortAndFilter() {
   document.getElementById('emptyState').style.display = 'none';
 
   renderDisplay(filtered);
+  updateHomeRows(curationApplied);
   unveilGrid();
   AppEvents.emit('results:rendered', { count: filtered.length });
 }
@@ -3093,8 +3163,8 @@ function renderRow(item, idx, ep = false) {
       <span class="rrow-rating">${rating ? `★ ${rating}` : ''}</span>
       <span class="rrow-meta">${fmtDuration(item.duration)} · ${fmtDate(item.timestamp)}</span>
       <span class="rrow-actions" onclick="event.stopPropagation()">
-        ${urlWebsite ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" title="Beim Sender abspielen">▶</a>` : ''}
-        ${urlVideo ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" title="Videodatei direkt öffnen (Download/VLC)">⬇</a>` : ''}
+        ${urlWebsite ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" onclick="recordRecentIdx(${idx})" title="Beim Sender abspielen">▶</a>` : ''}
+        ${urlVideo ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" onclick="recordRecentIdx(${idx})" title="Videodatei direkt öffnen (Download/VLC)">⬇</a>` : ''}
         <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">📌</button>
       </span>
     </div>
@@ -4080,11 +4150,11 @@ function renderWatchlist() {
       ${w.poster ? `<img class="wl-item-poster" src="${escAttr(w.poster)}" alt="">` : '<div class="wl-item-poster" style="background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:20px;">🎬</div>'}
       <div class="wl-item-info">
         <div class="wl-item-title">${escHtml(w.title)}</div>
-        <div class="wl-item-sub">${escHtml(w.channel)} · ${escHtml(w.topic)} · ${fmtDuration(w.duration)}${w.rating ? ` · ★ ${w.rating.toFixed(1)}` : ''}</div>
+        <div class="wl-item-sub">${escHtml(w.channel)} · ${escHtml(w.topic)} · ${fmtDuration(w.duration)}${w.rating ? ` · ★ ${w.rating.toFixed(1)}` : ''}${storedExpiryWarn(w) ? ` · ${storedExpiryWarn(w)}` : ''}</div>
         <div class="wl-item-persons">${w.persons.map(p => `<span class="wl-item-person">${escHtml(p)}</span>`).join('')}</div>
       </div>
       <div class="wl-item-actions">
-        ${w.url_website ? `<a href="${escAttr(w.url_website)}" target="_blank" rel="noopener" style="padding:4px 10px;font-size:12px;">▶ Ansehen</a>` : ''}
+        ${w.url_website ? `<a href="${escAttr(w.url_website)}" target="_blank" rel="noopener" data-wlopen="${escAttr(w.key)}" style="padding:4px 10px;font-size:12px;">▶ Ansehen</a>` : ''}
         <button class="wl-remove" data-key="${escAttr(w.key)}" aria-label="Von Merkliste entfernen">✕</button>
       </div>
     </div>
@@ -4097,6 +4167,201 @@ function removeFromWatchlist(key) {
   renderWatchlist();
   applySortAndFilter();
 }
+
+// ─── Startseiten-Rows: „Zuletzt geöffnet", Merkliste, thematische Reihen ───
+// (GUI-Research 09/2026: vertrautes Rows-Muster statt flacher Liste. Der
+// Verlauf bleibt local-first im Gerät — kein Konto, kein Server-Tracking.)
+const RECENT_MAX = 20;
+let recentCache = null;
+let homeRowsActive = false;
+
+function loadRecent() {
+  if (recentCache) return recentCache;
+  try { recentCache = JSON.parse(localStorage.getItem('metaMediathek_recent') || '[]'); } catch { recentCache = []; }
+  if (!Array.isArray(recentCache)) recentCache = [];
+  return recentCache;
+}
+function saveRecent(list) {
+  recentCache = list;
+  try { localStorage.setItem('metaMediathek_recent', JSON.stringify(list)); } catch (e) {}
+}
+// Merkt einen geöffneten Titel (Klick auf Ansehen/Direktlink). Speichert nur
+// die Anzeige-Essenz — genug, um die Kachel ohne neue Suche zu rendern.
+function recordRecent(item) {
+  if (!item || !item.title) return;
+  const key = getItemKey(item);
+  const list = loadRecent().filter(r => r && r.key !== key);
+  list.unshift({
+    key,
+    title: item.title,
+    topic: item.topic || '',
+    channel: item.channel || '',
+    url_website: safeUrl(item.url_website) || '',
+    url_video: safeUrl(item.url_video_hd) || safeUrl(item.url_video) || '',
+    duration: item.duration || 0,
+    timestamp: item.timestamp || 0,
+    poster: item._tmdb?.poster_sm || item.poster || null,
+    opened: Date.now()
+  });
+  saveRecent(list.slice(0, RECENT_MAX));
+}
+function recordRecentIdx(idx) {
+  const item = displayedResults[idx];
+  if (!item || item._series) return;
+  recordRecent(getActiveVariantItem(item));
+}
+function clearRecent() {
+  saveRecent([]);
+  if (homeRowsActive) updateHomeRows(true);
+}
+
+// Heuristische Offline-Warnung für gespeicherte Einträge (Merkliste/Verlauf):
+// wie auf den Karten alters-basiert — ehrlich als "möglicherweise" formuliert.
+function storedExpiryWarn(w) {
+  return w && w.timestamp && isLikelyExpired({ timestamp: w.timestamp })
+    ? '<span class="htile-warn">⚠ evtl. nicht mehr online</span>' : '';
+}
+
+// Kachel für einen Treffer aus displayedResults (Klick → Detail-Modal;
+// Serien-Stapel: Klick klappt den Stapel im Grid auf und scrollt hin)
+function renderHomeTile(idx) {
+  const item = displayedResults[idx];
+  if (!item) return '';
+  const isSeries = !!item._series;
+  const rep = isSeries ? item.rep : item;
+  const chClass = getChannelClass(rep.channel);
+  const genres = rep._genres || (rep._genres = detectGenres(rep));
+  const tmdb = rep._tmdb;
+  const urlW = safeUrl(rep.url_website);
+  const media = tmdb && tmdb.poster_sm
+    ? `<img src="${escAttr(tmdb.poster_sm)}" alt="" loading="lazy">`
+    : renderPosterPlaceholder(rep, genres, chClass) + (API_MODE && urlW ? renderOgPoster(urlW) : '');
+  const title = isSeries ? item.topic : (item._variants ? stripVariantSuffix(item.title) : item.title);
+  const bits = isSeries
+    ? [`${item.episodes.length} Folgen`, item.channels.size > 1 ? `${item.channels.size} Sender` : '']
+    : [fmtDuration(item.duration), fmtRelDate(item.timestamp)];
+  const click = isSeries ? `homeSeriesClick(${idx})` : `showDetail(${idx})`;
+  return `<div class="htile" tabindex="0" role="button" onclick="${click}"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click};}">
+    <div class="htile-media">${media}<span class="htile-ch ${chClass}">${escHtml(rep.channel)}</span>${isSeries ? `<span class="htile-count">${item.episodes.length}×</span>` : ''}</div>
+    <div class="htile-title">${escHtml(title)}</div>
+    <div class="htile-sub">${escHtml(bits.filter(Boolean).join(' · '))}</div>
+  </div>`;
+}
+
+// Serien-Kachel in einer Row: Stapel im Grid ausklappen und dorthin scrollen
+function homeSeriesClick(idx) {
+  const item = displayedResults[idx];
+  if (!item || !item._series) return;
+  if (!seriesExpanded.has(item._series)) { toggleSeries(item._series); }
+  const el = document.getElementById('resultsGrid').children[idx];
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Kachel für einen gespeicherten Eintrag (Verlauf/Merkliste; Klick → Mediathek)
+function renderStoredTile(w, sub, attrs = '') {
+  const href = safeUrl(w.url_website) || safeUrl(w.url_video) || '';
+  if (!href) return '';
+  const chClass = getChannelClass(w.channel);
+  const phColor = CHANNEL_PH_COLORS[chClass] || CHANNEL_PH_COLORS['ch-default'];
+  const media = w.poster
+    ? `<img src="${escAttr(w.poster)}" alt="" loading="lazy">`
+    : `<div class="poster-ph" style="--ph-a:${phColor}"><span class="ph-icon">🎬</span><span class="ph-channel">${escHtml(w.channel)}</span></div>`
+      + (API_MODE && safeUrl(w.url_website) ? renderOgPoster(safeUrl(w.url_website)) : '');
+  return `<a class="htile" href="${escAttr(href)}" target="_blank" rel="noopener" ${attrs}>
+    <div class="htile-media">${media}<span class="htile-ch ${chClass}">${escHtml(w.channel)}</span></div>
+    <div class="htile-title">${escHtml(w.title)}</div>
+    <div class="htile-sub">${sub}</div>
+  </a>`;
+}
+
+function homeRowHtml(title, hint, action, tilesHtml) {
+  if (!tilesHtml) return '';
+  return `<div class="hrow">
+    <div class="hrow-head">
+      <span class="hrow-title">${title}</span>
+      ${hint ? `<span class="hrow-hint">${hint}</span>` : ''}
+      ${action || ''}
+    </div>
+    <div class="hrow-scroller">${tilesHtml}</div>
+  </div>`;
+}
+
+// Baut die Startseiten-Reihen aus Verlauf, Merkliste und den kuratierten
+// Treffern. Wird nach jedem Render der Start-Ansicht aufgerufen (idempotent).
+function updateHomeRows(show) {
+  homeRowsActive = !!show;
+  const wrap = document.getElementById('homeRows');
+  const head = document.getElementById('homeGridHead');
+  if (!wrap) return;
+  if (!show) {
+    wrap.hidden = true; wrap.innerHTML = '';
+    if (head) head.hidden = true;
+    return;
+  }
+  const parts = [];
+
+  // 1) Zuletzt geöffnet (local-first-Verlauf)
+  const rec = loadRecent().filter(w => w && w.title);
+  if (rec.length > 0) {
+    parts.push(homeRowHtml('🕘 Zuletzt geöffnet',
+      'nur auf diesem Gerät gespeichert',
+      '<button class="hrow-action" onclick="clearRecent()">Verlauf löschen</button>',
+      rec.map(w => {
+        const opened = w.opened ? fmtRelDate(w.opened / 1000) : '';
+        const sub = [opened ? `geöffnet: ${escHtml(opened.toLowerCase())}` : '', storedExpiryWarn(w)].filter(Boolean).join(' · ');
+        return renderStoredTile(w, sub);
+      }).join('')));
+  }
+
+  // 2) Merkliste — inkl. Offline-Warnung: gemerkte Filme verschwinden durch
+  // Depublizierung, genau dort ist die Warnung am wertvollsten
+  const wl = loadWatchlist().slice().sort((a, b) => (b.added || 0) - (a.added || 0)).slice(0, 15);
+  if (wl.length > 0) {
+    parts.push(homeRowHtml('📌 Deine Merkliste', '',
+      '<button class="hrow-action" onclick="toggleWatchlistPanel()">Verwalten</button>',
+      wl.map(w => {
+        const sub = [escHtml(fmtDuration(w.duration) || ''), storedExpiryWarn(w)].filter(Boolean).join(' · ');
+        return renderStoredTile(w, sub, `data-wlkey="${escAttr(w.key)}"`);
+      }).join('')));
+  }
+
+  // 3) Thematische Reihen aus den kuratierten Start-Treffern
+  const now = Date.now() / 1000;
+  // Prädikate arbeiten auf dem Repräsentanten (bei Serien-Stapeln: rep),
+  // damit Stapel in den Reihen auftauchen statt herauszufallen
+  const repOf = r => r._series ? r.rep : r;
+  const gOf = r => { const rep = repOf(r); return rep._genres || (rep._genres = detectGenres(rep)); };
+  const pickTiles = (pred, max = 15) => {
+    const out = [];
+    const seenEpisode = new Set();
+    for (let i = 0; i < displayedResults.length && out.length < max; i++) {
+      const r = displayedResults[i];
+      if (!r) continue;
+      // Ausgeklappte Einzelfolgen nicht doppelt neben ihrem Stapel zeigen
+      if (r._series) { for (const e of r.episodes) seenEpisode.add(e); }
+      else if (seenEpisode.has(r)) continue;
+      if (pred(r)) out.push(i);
+    }
+    return out.length >= 4 ? out.map(renderHomeTile).join('') : '';
+  };
+  const tsOf = r => r._series ? Math.max(...r.episodes.map(e => e.timestamp || 0)) : (r.timestamp || 0);
+  parts.push(homeRowHtml('🆕 Neu diese Woche', '', '',
+    pickTiles(r => tsOf(r) >= now - 7 * 86400)));
+  parts.push(homeRowHtml('🎬 Spielfilme', '', '',
+    pickTiles(r => !r._series && (gOf(r).includes('Spielfilm') || ((r.duration || 0) >= 4800 && !gOf(r).includes('Dokumentation') && !gOf(r).includes('Dokumentarfilm'))))));
+  parts.push(homeRowHtml('🌍 Dokus & Reportagen', '', '',
+    pickTiles(r => gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm'))));
+  parts.push(homeRowHtml('🔎 Krimis & Thriller', '', '',
+    pickTiles(r => gOf(r).includes('Krimi') || gOf(r).includes('Thriller'))));
+
+  const html = parts.filter(Boolean).join('');
+  wrap.innerHTML = html;
+  wrap.hidden = !html;
+  if (head) head.hidden = !html;
+}
+// Merken/Entfernen soll die Merkliste-Row sofort aktualisieren
+AppEvents.on('watchlist:changed', () => { if (homeRowsActive) updateHomeRows(true); });
 
 // ─── Init ───
 document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
@@ -4130,7 +4395,21 @@ document.getElementById('wlFilterRow').addEventListener('click', e => {
 });
 document.getElementById('wlItems').addEventListener('click', e => {
   const btn = e.target.closest('.wl-remove');
-  if (btn) removeFromWatchlist(btn.dataset.key);
+  if (btn) { removeFromWatchlist(btn.dataset.key); return; }
+  // "Ansehen" aus der Merkliste zählt als geöffnet → Verlauf ("Zuletzt geöffnet")
+  const open = e.target.closest('[data-wlopen]');
+  if (open) {
+    const w = loadWatchlist().find(x => x.key === open.dataset.wlopen);
+    if (w) recordRecent(w);
+  }
+});
+// Merkliste-Kacheln auf der Startseite: Öffnen ebenfalls in den Verlauf übernehmen
+document.getElementById('homeRows').addEventListener('click', e => {
+  const t = e.target.closest('[data-wlkey]');
+  if (t) {
+    const w = loadWatchlist().find(x => x.key === t.dataset.wlkey);
+    if (w) recordRecent(w);
+  }
 });
 
 // Restore taste profile from localStorage
