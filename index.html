@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-09-03.1">
+<meta name="mm-build" content="2026-09-04.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -31,16 +31,24 @@
     min-height: 100dvh; /* iOS: korrekte Höhe trotz dynamischer Adressleiste */
   }
 
-  /* Header */
+  /* Header: schlanke Sticky-Zeile (Logo · Suche · Merkliste · Profil) —
+     Filter, Chips und Statistik leben darunter im nicht-stickenden Subheader */
   .header {
     background: linear-gradient(135deg, #1a1d27 0%, #1e2a3a 100%);
     border-bottom: 1px solid var(--border);
-    padding: 20px 30px;
+    padding: 10px 30px;
     position: sticky; top: 0; z-index: 100;
   }
   .header-top {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 16px;
+    gap: 16px;
+  }
+  .header-top .search-bar { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+  .subheader { padding: 12px 30px 0; }
+  .results-meta { margin-top: 10px; }
+  .filter-toggle-btn .ft-badge {
+    display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px;
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
   }
   .logo {
     display: flex; align-items: center; gap: 12px;
@@ -123,8 +131,11 @@
   .btn-gold:hover { background: linear-gradient(135deg, #daa520, #ffe44d); }
   .btn-sm { padding: 6px 14px; font-size: 12px; }
 
-  .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .filter-toggle-btn { display: none; } /* nur mobil sichtbar (Media Query unten) */
+  /* Filterwand auf ALLEN Viewports standardmäßig eingeklappt — 10 Dropdowns
+     dominierten sonst den Desktop-Header (GUI-Research: Filter on demand) */
+  .filters { display: none; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .filters.open { display: flex; }
+  .filter-toggle-btn { display: inline-flex; align-items: center; font-size: 13px; padding: 8px 14px; }
   .filter-select {
     padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-size: 13px;
@@ -137,7 +148,13 @@
   }
   .filter-group { display: flex; flex-direction: column; gap: 4px; }
 
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .chips {
+    display: flex; gap: 8px; margin-top: 10px;
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px; scrollbar-width: none;
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex-shrink: 0; }
   .chip {
     padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
     cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
@@ -174,6 +191,21 @@
   }
   .hrow-title { font-size: 17px; font-weight: 700; }
   .hrow-hint { font-size: 12px; color: var(--text-dim); }
+  /* Reihen ein-/ausklappbar: Pfeil + Titel als ein Klickziel, Zustand persistiert */
+  .hrow-toggle {
+    display: inline-flex; align-items: baseline; gap: 8px;
+    background: none; border: none; color: var(--text); cursor: pointer;
+    padding: 2px 4px 2px 0; font-family: inherit; text-align: left;
+  }
+  .hrow-toggle:hover .hrow-title { color: var(--accent-hover); }
+  .hrow-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .hrow-chevron {
+    font-size: 12px; color: var(--text-dim); width: 14px;
+    transition: transform 0.15s; display: inline-block;
+  }
+  .hrow.collapsed .hrow-scroller { display: none; }
+  .hrow.collapsed { margin-bottom: 10px; }
+  .hrow-count { font-size: 13px; font-weight: 400; color: var(--text-dim); }
   .hrow-action {
     margin-left: auto; font-size: 12px; color: var(--text-dim);
     background: none; border: none; cursor: pointer; padding: 4px 8px;
@@ -596,7 +628,9 @@
       padding-right: max(16px, env(safe-area-inset-right));
     }
     .header-top { flex-direction: column; gap: 10px; align-items: flex-start; }
+    .header-top .search-bar { width: 100%; }
     .header-right { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .subheader { padding: 10px 16px 0; }
     .stats { flex-wrap: wrap; gap: 8px 14px; }
     .watchlist-toggle, .profile-toggle { min-height: 44px; }
     .search-bar { flex-wrap: wrap; }
@@ -667,28 +701,24 @@
       <div>Meta<span>Mediathek</span></div>
       <span class="build-tag" id="buildTag" title="App-Version"></span>
     </div>
+    <div class="search-bar">
+      <input type="text" class="search-input" id="searchInput"
+             placeholder="Suche nach Titel, Thema, Schauspieler oder Regisseur…" autocomplete="off">
+      <button class="btn btn-primary" onclick="handleSearch()">Suchen</button>
+      <button class="btn btn-secondary" onclick="resetAll()">Zurücksetzen</button>
+    </div>
     <div class="header-right">
-      <div class="stats">
-        <div><strong id="resultCountTotal">0</strong> Ergebnisse gesamt</div>
-        <div id="filteredInfo"></div>
-        <div><strong id="senderCount">0</strong> Sender</div>
-        <div id="tmdbStatus" style="color:var(--green)"></div>
-      </div>
       <button class="watchlist-toggle" id="watchlistToggle" onclick="toggleWatchlistPanel()">
         📌 Merkliste <span class="wl-count" id="wlCount">0</span>
       </button>
       <button class="profile-toggle" id="profileToggle" onclick="toggleTastePanel()">
-        🎯 Geschmacksprofil
+        🎯 Profil
       </button>
     </div>
   </div>
+</div>
 
-  <div class="search-bar">
-    <input type="text" class="search-input" id="searchInput"
-           placeholder="Suche nach Titel, Thema, Schauspieler oder Regisseur…" autocomplete="off">
-    <button class="btn btn-primary" onclick="handleSearch()">Suchen</button>
-    <button class="btn btn-secondary" onclick="resetAll()">Zurücksetzen</button>
-  </div>
+<div class="subheader">
   <div id="personInfo" style="display:none;margin-bottom:12px;padding:10px 16px;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border);">
     <div style="display:flex;align-items:center;gap:12px;">
       <img id="personPhoto" style="width:50px;height:50px;border-radius:50%;object-fit:cover;" src="" alt="">
@@ -701,7 +731,7 @@
   </div>
 
   <button type="button" class="btn btn-secondary filter-toggle-btn" id="filterToggleBtn"
-          onclick="const f=document.querySelector('.filters'); f.classList.toggle('open'); this.textContent = f.classList.contains('open') ? 'Filter ausblenden ▲' : 'Filter & Sortierung ▼';">Filter &amp; Sortierung ▼</button>
+          onclick="toggleFilters()">Filter &amp; Sortierung ▼</button>
   <div class="filters">
     <div class="filter-group">
       <span class="filter-label">Sender</span>
@@ -840,6 +870,15 @@
     <span class="chip" data-term="Science Fiction" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
     <span class="chip" data-term="Liebe" onclick="quickSearch('Liebe')">Liebesfilme</span>
     <span class="chip" data-term="Kinderfilm" onclick="quickSearch('Kinderfilm')">Kinderfilme</span>
+  </div>
+
+  <div class="results-meta">
+    <div class="stats">
+      <div><strong id="resultCountTotal">0</strong> Ergebnisse gesamt</div>
+      <div id="filteredInfo"></div>
+      <div><strong id="senderCount">0</strong> Sender</div>
+      <div id="tmdbStatus" style="color:var(--green)"></div>
+    </div>
   </div>
 </div>
 
@@ -3060,6 +3099,7 @@ function applySortAndFilter() {
 
   renderDisplay(filtered);
   updateHomeRows(curationApplied);
+  if (typeof updateFilterBadge === 'function') updateFilterBadge();
   unveilGrid();
   AppEvents.emit('results:rendered', { count: filtered.length });
 }
@@ -4275,11 +4315,40 @@ function renderStoredTile(w, sub, attrs = '') {
   </a>`;
 }
 
-function homeRowHtml(title, hint, action, tilesHtml) {
+// Eingeklappte Reihen merken (pro Gerät): Nutzer sehen dauerhaft nur die
+// Reihen, die sie interessieren, statt an allen vorbeizuscrollen
+let rowCollapsedCache = null;
+function loadRowCollapsed() {
+  if (rowCollapsedCache) return rowCollapsedCache;
+  try { rowCollapsedCache = JSON.parse(localStorage.getItem('metaMediathek_rowsCollapsed') || '{}'); } catch { rowCollapsedCache = {}; }
+  if (typeof rowCollapsedCache !== 'object' || !rowCollapsedCache) rowCollapsedCache = {};
+  return rowCollapsedCache;
+}
+function toggleHomeRow(id) {
+  const c = loadRowCollapsed();
+  c[id] = !c[id];
+  try { localStorage.setItem('metaMediathek_rowsCollapsed', JSON.stringify(c)); } catch (e) {}
+  // Nur diese eine Reihe umschalten — kein kompletter Re-Render (Scrollpositionen
+  // der anderen Reihen bleiben erhalten)
+  const row = document.querySelector(`.hrow[data-rowid="${id}"]`);
+  if (row) {
+    row.classList.toggle('collapsed', c[id]);
+    const chev = row.querySelector('.hrow-chevron');
+    if (chev) chev.textContent = c[id] ? '▸' : '▾';
+    const btn = row.querySelector('.hrow-toggle');
+    if (btn) btn.setAttribute('aria-expanded', c[id] ? 'false' : 'true');
+  }
+}
+function homeRowHtml(id, title, hint, action, tilesHtml, count) {
   if (!tilesHtml) return '';
-  return `<div class="hrow">
+  const collapsed = !!loadRowCollapsed()[id];
+  return `<div class="hrow ${collapsed ? 'collapsed' : ''}" data-rowid="${id}">
     <div class="hrow-head">
-      <span class="hrow-title">${title}</span>
+      <button type="button" class="hrow-toggle" onclick="toggleHomeRow('${id}')"
+              aria-expanded="${collapsed ? 'false' : 'true'}" title="Reihe ein-/ausklappen">
+        <span class="hrow-chevron">${collapsed ? '▸' : '▾'}</span>
+        <span class="hrow-title">${title} <span class="hrow-count">(${count})</span></span>
+      </button>
       ${hint ? `<span class="hrow-hint">${hint}</span>` : ''}
       ${action || ''}
     </div>
@@ -4304,26 +4373,26 @@ function updateHomeRows(show) {
   // 1) Zuletzt geöffnet (local-first-Verlauf)
   const rec = loadRecent().filter(w => w && w.title);
   if (rec.length > 0) {
-    parts.push(homeRowHtml('🕘 Zuletzt geöffnet',
+    parts.push(homeRowHtml('recent', '🕘 Zuletzt geöffnet',
       'nur auf diesem Gerät gespeichert',
       '<button class="hrow-action" onclick="clearRecent()">Verlauf löschen</button>',
       rec.map(w => {
         const opened = w.opened ? fmtRelDate(w.opened / 1000) : '';
         const sub = [opened ? `geöffnet: ${escHtml(opened.toLowerCase())}` : '', storedExpiryWarn(w)].filter(Boolean).join(' · ');
         return renderStoredTile(w, sub);
-      }).join('')));
+      }).join(''), rec.length));
   }
 
   // 2) Merkliste — inkl. Offline-Warnung: gemerkte Filme verschwinden durch
   // Depublizierung, genau dort ist die Warnung am wertvollsten
   const wl = loadWatchlist().slice().sort((a, b) => (b.added || 0) - (a.added || 0)).slice(0, 15);
   if (wl.length > 0) {
-    parts.push(homeRowHtml('📌 Deine Merkliste', '',
+    parts.push(homeRowHtml('watchlist', '📌 Deine Merkliste', '',
       '<button class="hrow-action" onclick="toggleWatchlistPanel()">Verwalten</button>',
       wl.map(w => {
         const sub = [escHtml(fmtDuration(w.duration) || ''), storedExpiryWarn(w)].filter(Boolean).join(' · ');
         return renderStoredTile(w, sub, `data-wlkey="${escAttr(w.key)}"`);
-      }).join('')));
+      }).join(''), wl.length));
   }
 
   // 3) Thematische Reihen aus den kuratierten Start-Treffern
@@ -4332,7 +4401,7 @@ function updateHomeRows(show) {
   // damit Stapel in den Reihen auftauchen statt herauszufallen
   const repOf = r => r._series ? r.rep : r;
   const gOf = r => { const rep = repOf(r); return rep._genres || (rep._genres = detectGenres(rep)); };
-  const pickTiles = (pred, max = 15) => {
+  const pickIdx = (pred, max = 15) => {
     const out = [];
     const seenEpisode = new Set();
     for (let i = 0; i < displayedResults.length && out.length < max; i++) {
@@ -4343,17 +4412,17 @@ function updateHomeRows(show) {
       else if (seenEpisode.has(r)) continue;
       if (pred(r)) out.push(i);
     }
-    return out.length >= 4 ? out.map(renderHomeTile).join('') : '';
+    return out.length >= 4 ? out : [];
+  };
+  const themedRow = (id, title, pred) => {
+    const idxs = pickIdx(pred);
+    return homeRowHtml(id, title, '', '', idxs.map(renderHomeTile).join(''), idxs.length);
   };
   const tsOf = r => r._series ? Math.max(...r.episodes.map(e => e.timestamp || 0)) : (r.timestamp || 0);
-  parts.push(homeRowHtml('🆕 Neu diese Woche', '', '',
-    pickTiles(r => tsOf(r) >= now - 7 * 86400)));
-  parts.push(homeRowHtml('🎬 Spielfilme', '', '',
-    pickTiles(r => !r._series && (gOf(r).includes('Spielfilm') || ((r.duration || 0) >= 4800 && !gOf(r).includes('Dokumentation') && !gOf(r).includes('Dokumentarfilm'))))));
-  parts.push(homeRowHtml('🌍 Dokus & Reportagen', '', '',
-    pickTiles(r => gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm'))));
-  parts.push(homeRowHtml('🔎 Krimis & Thriller', '', '',
-    pickTiles(r => gOf(r).includes('Krimi') || gOf(r).includes('Thriller'))));
+  parts.push(themedRow('new', '🆕 Neu diese Woche', r => tsOf(r) >= now - 7 * 86400));
+  parts.push(themedRow('movies', '🎬 Spielfilme', r => !r._series && (gOf(r).includes('Spielfilm') || ((r.duration || 0) >= 4800 && !gOf(r).includes('Dokumentation') && !gOf(r).includes('Dokumentarfilm')))));
+  parts.push(themedRow('docs', '🌍 Dokus & Reportagen', r => gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm')));
+  parts.push(themedRow('crime', '🔎 Krimis & Thriller', r => gOf(r).includes('Krimi') || gOf(r).includes('Thriller')));
 
   const html = parts.filter(Boolean).join('');
   wrap.innerHTML = html;
@@ -4362,6 +4431,43 @@ function updateHomeRows(show) {
 }
 // Merken/Entfernen soll die Merkliste-Row sofort aktualisieren
 AppEvents.on('watchlist:changed', () => { if (homeRowsActive) updateHomeRows(true); });
+
+// ─── Filterpanel: auf allen Viewports eingeklappt, Zustand persistiert,
+// Badge zeigt die Zahl der aktiven (vom Default abweichenden) Filter ───
+const FILTER_DEFAULTS = {
+  filterChannel: '', filterLang: '', filterDurationMin: '0', filterDurationMax: '0',
+  filterSort: 'timestamp_desc', filterAudio: 'standard', filterRating: '0',
+  filterAge: '365', filterSize: '200'
+};
+function activeFilterCount() {
+  let n = 0;
+  for (const [id, def] of Object.entries(FILTER_DEFAULTS)) {
+    const el = document.getElementById(id);
+    if (el && el.value !== def) n++;
+  }
+  return n;
+}
+function updateFilterBadge() {
+  const btn = document.getElementById('filterToggleBtn');
+  if (!btn) return;
+  const open = document.querySelector('.filters').classList.contains('open');
+  const n = activeFilterCount();
+  btn.innerHTML = (open ? 'Filter ausblenden ▲' : 'Filter &amp; Sortierung ▼')
+    + (n > 0 ? ` <span class="ft-badge">${n}</span>` : '');
+}
+function toggleFilters() {
+  const f = document.querySelector('.filters');
+  f.classList.toggle('open');
+  try { localStorage.setItem('metaMediathek_filtersOpen', f.classList.contains('open') ? '1' : ''); } catch (e) {}
+  updateFilterBadge();
+}
+// Zustand wiederherstellen (Default: eingeklappt)
+try {
+  if (localStorage.getItem('metaMediathek_filtersOpen') === '1') {
+    document.querySelector('.filters').classList.add('open');
+  }
+} catch (e) {}
+updateFilterBadge();
 
 // ─── Init ───
 document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
