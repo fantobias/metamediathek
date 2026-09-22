@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-09-04.1">
+<meta name="mm-build" content="2026-09-04.2">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -136,6 +136,7 @@
   .filters { display: none; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
   .filters.open { display: flex; }
   .filter-toggle-btn { display: inline-flex; align-items: center; font-size: 13px; padding: 8px 14px; }
+  .subheader-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .filter-select {
     padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-size: 13px;
@@ -730,8 +731,16 @@
     </div>
   </div>
 
-  <button type="button" class="btn btn-secondary filter-toggle-btn" id="filterToggleBtn"
-          onclick="toggleFilters()">Filter &amp; Sortierung ▼</button>
+  <div class="subheader-controls">
+    <button type="button" class="btn btn-secondary filter-toggle-btn" id="filterToggleBtn"
+            onclick="toggleFilters()">Filter &amp; Sortierung ▼</button>
+    <!-- Ansicht-Umschalter sichtbar außerhalb des Filterpanels (Feedback #1264:
+         im eingeklappten Panel war er nicht mehr auffindbar) -->
+    <div class="view-toggle" role="group" aria-label="Darstellung">
+      <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht">⊞ Kacheln</button>
+      <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht">≡ Liste</button>
+    </div>
+  </div>
   <div class="filters">
     <div class="filter-group">
       <span class="filter-label">Sender</span>
@@ -845,13 +854,6 @@
         <option value="500">500</option>
         <option value="1000">1000</option>
       </select>
-    </div>
-    <div class="filter-group">
-      <span class="filter-label">Ansicht</span>
-      <div class="view-toggle" role="group" aria-label="Darstellung">
-        <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht">⊞ Kacheln</button>
-        <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht">≡ Liste</button>
-      </div>
     </div>
   </div>
 
@@ -1025,9 +1027,14 @@ const seriesExpanded = new Set();  // ausgeklappte Serien (überlebt Re-Renders)
 let viewMode = 'cards';            // 'cards' | 'list' (localStorage)
 try { if (localStorage.getItem('metaMediathek_view') === 'list') viewMode = 'list'; } catch (e) {}
 
+// Generische Container-Topics ("Kino - Filme", "Spielfilm", …) bündeln völlig
+// verschiedene Werke — solche Treffer nicht zu einem Serien-Stapel zusammenfassen
+// (Feedback #1199: sieben unterschiedliche arte-Kinofilme unter einer Kachel)
+const GENERIC_STACK_TOPIC = /\b(kino|filme?|spielfilme?|fernsehfilm|dokumentarfilme?)\b/i;
 function seriesKey(r) {
   const t = (r.topic || '').trim();
-  return t ? normDE(t) : '';
+  if (!t || GENERIC_STACK_TOPIC.test(t)) return '';
+  return normDE(t);
 }
 
 function toggleSeries(key) {
@@ -4359,6 +4366,9 @@ function homeRowHtml(id, title, hint, action, tilesHtml, count) {
 // Baut die Startseiten-Reihen aus Verlauf, Merkliste und den kuratierten
 // Treffern. Wird nach jedem Render der Start-Ansicht aufgerufen (idempotent).
 function updateHomeRows(show) {
+  // Listen-Ansicht bleibt eine Liste: Kachel-Reihen nur in der Kachel-Ansicht
+  // (Feedback #1264 — Rows überdeckten die umgeschaltete Liste)
+  if (show && typeof viewMode !== 'undefined' && viewMode === 'list') show = false;
   homeRowsActive = !!show;
   const wrap = document.getElementById('homeRows');
   const head = document.getElementById('homeGridHead');
@@ -4420,7 +4430,14 @@ function updateHomeRows(show) {
   };
   const tsOf = r => r._series ? Math.max(...r.episodes.map(e => e.timestamp || 0)) : (r.timestamp || 0);
   parts.push(themedRow('new', '🆕 Neu diese Woche', r => tsOf(r) >= now - 7 * 86400));
-  parts.push(themedRow('movies', '🎬 Spielfilme', r => !r._series && (gOf(r).includes('Spielfilm') || ((r.duration || 0) >= 4800 && !gOf(r).includes('Dokumentation') && !gOf(r).includes('Dokumentarfilm')))));
+  // Spielfilme (Feedback #1261: Magazinformate wie "Wie geht das?" rutschten
+  // über den Laufzeit-Fallback hinein): Fragezeichen-Topics und Magazin-Sendungen
+  // raus; der Fallback greift nur noch ohne jedes Faktual-Genre-Signal
+  const magazineLike = r => /\?\s*$/.test((r.topic || '').trim()) || isNewsMagazineTopic(r.topic);
+  const FACTUAL = ['Dokumentation', 'Dokumentarfilm', 'Natur', 'Wissenschaft', 'Geschichte', 'Politik', 'Kultur', 'Sport', 'Musik'];
+  parts.push(themedRow('movies', '🎬 Spielfilme', r => !r._series && !magazineLike(r)
+    && (gOf(r).includes('Spielfilm')
+      || ((r.duration || 0) >= 4800 && !FACTUAL.some(g => gOf(r).includes(g))))));
   parts.push(themedRow('docs', '🌍 Dokus & Reportagen', r => gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm')));
   parts.push(themedRow('crime', '🔎 Krimis & Thriller', r => gOf(r).includes('Krimi') || gOf(r).includes('Thriller')));
 
