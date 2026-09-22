@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-09-04.2">
+<meta name="mm-build" content="2026-09-22.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -137,6 +137,50 @@
   .filters.open { display: flex; }
   .filter-toggle-btn { display: inline-flex; align-items: center; font-size: 13px; padding: 8px 14px; }
   .subheader-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  /* Sender-Chips: der Aggregator-Kernfilter sichtbar statt im Dropdown versteckt */
+  .sender-chips { margin-top: 10px; }
+  .schip {
+    padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text-dim); transition: all 0.15s; flex-shrink: 0;
+  }
+  .schip:hover { border-color: var(--accent); color: var(--accent); }
+  .schip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* Daumen / Nicht interessiert */
+  .rate-btn, .hide-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer; font-size: 14px; padding: 4px 8px; color: var(--text-dim);
+    transition: all 0.2s;
+  }
+  .rate-btn:hover, .hide-btn:hover { border-color: var(--accent); }
+  .rate-btn.active-up { color: var(--green); border-color: var(--green); background: rgba(52,211,153,0.12); }
+  .rate-btn.active-down { color: var(--red); border-color: var(--red); background: rgba(248,113,113,0.12); }
+  .hide-btn.active { color: var(--red); border-color: var(--red); background: rgba(248,113,113,0.12); }
+  .hidden-info { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+  .hidden-info a { color: var(--accent); text-decoration: none; }
+
+  /* Skeleton-Loading: Platzhalter in Karten-Geometrie statt Spinner */
+  .loading { padding: 16px 30px; align-items: stretch; }
+  .sk-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px; width: 100%;
+  }
+  .sk-card {
+    display: flex; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .sk { background: linear-gradient(90deg, var(--surface2) 25%, #313749 37%, var(--surface2) 63%);
+    background-size: 400% 100%; animation: skShimmer 1.4s ease infinite; border-radius: 6px; }
+  @keyframes skShimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+  .sk-poster { width: 120px; min-height: 170px; flex-shrink: 0; border-radius: 0; }
+  .sk-body { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .sk-line { height: 12px; }
+  .sk-w40 { width: 40%; } .sk-w60 { width: 60%; } .sk-w80 { width: 80%; } .sk-w95 { width: 95%; }
+
+  /* Mobile Bottom-Tab-Bar (nur < 768px sichtbar, s. Media Query) */
+  .tabbar { display: none; }
   .filter-select {
     padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-size: 13px;
@@ -661,9 +705,27 @@
     }
     .card-poster { width: 90px; min-height: 130px; }
     /* Touch-Targets: min. 44px (Apple HIG) */
-    .card-actions .btn, .bookmark-btn {
+    .card-actions .btn, .bookmark-btn, .rate-btn, .hide-btn {
       min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
     }
+    .sk-grid { grid-template-columns: 1fr; }
+    .loading { padding: 12px; }
+    /* Bottom-Tab-Bar: vertrautes App-Muster (ARD-Mediathek), 44pt-Targets, Safe-Area */
+    .tabbar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 150;
+      display: flex; background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tb-item {
+      flex: 1; background: none; border: none; cursor: pointer; font-family: inherit;
+      color: var(--text-dim); font-size: 11px; font-weight: 600;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: 8px 4px 6px; min-height: 52px;
+    }
+    .tb-item:active { color: var(--accent); }
+    .tb-ico { font-size: 20px; line-height: 1; }
+    body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
     .f-chip { min-height: 44px; display: inline-flex; align-items: center; }
     .pagination .btn { min-height: 44px; }
     .taste-panel { margin: 12px 16px; }
@@ -857,6 +919,18 @@
     </div>
   </div>
 
+  <div class="chips sender-chips" id="senderChips">
+    <span class="schip active" data-ch="">Alle Sender</span>
+    <span class="schip" data-ch="ARD">ARD</span>
+    <span class="schip" data-ch="ZDF">ZDF</span>
+    <span class="schip" data-ch="ARTE.DE">arte</span>
+    <span class="schip" data-ch="3Sat">3sat</span>
+    <span class="schip" data-ch="ORF">ORF</span>
+    <span class="schip" data-ch="SRF">SRF</span>
+    <span class="schip" data-ch="PHOENIX">Phoenix</span>
+    <span class="schip" data-ch="KiKA">KiKA</span>
+  </div>
+
   <div class="chips" id="quickChips">
     <span class="chip" data-term="Spielfilm" onclick="quickSearch('Spielfilm')">Spielfilme</span>
     <span class="chip" data-term="Dokumentarfilm" onclick="quickSearch('Dokumentarfilm')">Dokumentarfilme</span>
@@ -881,6 +955,7 @@
       <div><strong id="senderCount">0</strong> Sender</div>
       <div id="tmdbStatus" style="color:var(--green)"></div>
     </div>
+    <div id="hiddenInfo" class="hidden-info" hidden></div>
   </div>
 </div>
 
@@ -912,9 +987,8 @@
   <div class="home-rows" id="homeRows" hidden></div>
   <div class="home-grid-head" id="homeGridHead" hidden>Alle aktuellen Sendungen</div>
   <div class="loading" id="loadingState" style="display:none;">
-    <div class="spinner"></div>
-    <div>Durchsuche alle Mediatheken…</div>
     <div class="loading-sub" id="loadingSub"></div>
+    <div class="sk-grid" id="skGrid" aria-hidden="true"><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div><div class="sk-card"><div class="sk sk-poster"></div><div class="sk-body"><div class="sk sk-line sk-w40"></div><div class="sk sk-line sk-w80"></div><div class="sk sk-line sk-w95"></div><div class="sk sk-line sk-w60"></div></div></div></div>
   </div>
   <div class="grid" id="resultsGrid"></div>
   <div class="empty" id="emptyState" style="display:none;">
@@ -927,6 +1001,13 @@
     <button class="btn btn-secondary" id="btnNext" onclick="nextPage()">Weiter →</button>
   </div>
 </div>
+
+<nav class="tabbar" id="tabbar" aria-label="Hauptnavigation">
+  <button type="button" class="tb-item" onclick="tabbarGo('home')"><span class="tb-ico">🏠</span><span>Start</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('search')"><span class="tb-ico">🔍</span><span>Suche</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('watchlist')"><span class="tb-ico">📌</span><span>Merkliste</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('filter')"><span class="tb-ico">⚙️</span><span>Filter</span></button>
+</nav>
 
 <!-- Global Bookmark Dropdown -->
 <div class="bm-dropdown" id="globalBmDrop" style="position:fixed;z-index:300;">
@@ -2752,6 +2833,7 @@ function renderCard(item, idx, ep = false) {
         <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
           📌
         </button>
+        ${renderRateButtons(idx)}
       </div>
     </div>
   `;
@@ -2879,6 +2961,7 @@ function showDetail(idx) {
         ? `<a href="${escAttr(safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video))}" target="_blank" rel="noopener" class="btn btn-secondary" onclick="recordRecentIdx(${idx})" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">⬇ Direktlink (Download/VLC)</a>` : ''}
       ${safeUrl(activeItem.url_subtitle)
         ? `<a href="${escAttr(safeUrl(activeItem.url_subtitle))}" target="_blank" rel="noopener" class="btn btn-secondary">💬 Untertitel</a>` : ''}
+      ${renderRateButtons(idx)}
       ${tmdb ? `<a href="https://www.themoviedb.org/${tmdb.tmdb_type || 'movie'}/${encodeURIComponent(tmdb.tmdb_id)}" target="_blank" rel="noopener" class="tmdb-link">↗ Auf TMDB ansehen</a>` : ''}
     </div>
   `;
@@ -3048,6 +3131,7 @@ function applySortAndFilter() {
       // dort dominieren Tagesmeldungen das Profil-Ranking
       && (r.duration || 0) >= TASTE_MIN_DURATION
       && !isNewsMagazineTopic(r.topic)
+      && !isHiddenItem(r)
     );
   }
 
@@ -3055,7 +3139,9 @@ function applySortAndFilter() {
   if (sortVal === 'rating_desc') {
     filtered.sort((a, b) => ((b._tmdb?.rating || 0) - (a._tmdb?.rating || 0)));
   } else if (sortVal === 'taste_desc') {
-    filtered.sort((a, b) => ((b._tasteScore || 0) - (a._tasteScore || 0)));
+    // Daumen fließen ins Ranking ein: 👍 hebt, 👎 senkt (±15 Punkte, local-first)
+    const rBoost = it => (loadRatings()[getItemKey(it)] || 0) * 15;
+    filtered.sort((a, b) => (((b._tasteScore || 0) + rBoost(b)) - ((a._tasteScore || 0) + rBoost(a))));
   } else if (similarRef && sortVal === 'timestamp_desc') {
     // „Film wie …": Standard-Sortierung = Ähnlichkeits-Rang der TMDB-Empfehlung
     // (Gruppierung kann die Reihenfolge verschieben — hier wiederherstellen)
@@ -3255,6 +3341,10 @@ function showLoading(subText) {
   } else {
     grid.innerHTML = '';
   }
+  // Skeleton-Karten nur, wenn nichts Altes zu sehen ist — sonst reicht die
+  // ausgegraute Bestandsansicht plus Statuszeile
+  const skg = document.getElementById('skGrid');
+  if (skg) skg.hidden = grid.children.length > 0;
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('tmdbStatus').textContent = '';
   closeBookmarkDropdown();
@@ -4420,6 +4510,8 @@ function updateHomeRows(show) {
       // Ausgeklappte Einzelfolgen nicht doppelt neben ihrem Stapel zeigen
       if (r._series) { for (const e of r.episodes) seenEpisode.add(e); }
       else if (seenEpisode.has(r)) continue;
+      // „Nicht interessiert": aus allen Empfehlungs-Reihen fernhalten
+      if (isHiddenItem(r._series ? r.rep : r)) continue;
       if (pred(r)) out.push(i);
     }
     return out.length >= 4 ? out : [];
@@ -4445,6 +4537,13 @@ function updateHomeRows(show) {
   wrap.innerHTML = html;
   wrap.hidden = !html;
   if (head) head.hidden = !html;
+  // Transparenz: zeigen, wie viele Sendungen bewusst ausgeblendet sind
+  const hi = document.getElementById('hiddenInfo');
+  if (hi) {
+    const n = Object.keys(loadHidden()).length;
+    hi.hidden = !(show && n > 0);
+    if (!hi.hidden) hi.innerHTML = `🚫 ${n} Sendung${n === 1 ? '' : 'en'} aus den Empfehlungen ausgeblendet · <a href="javascript:void(0)" onclick="clearHidden()">alle wieder einblenden</a>`;
+  }
 }
 // Merken/Entfernen soll die Merkliste-Row sofort aktualisieren
 AppEvents.on('watchlist:changed', () => { if (homeRowsActive) updateHomeRows(true); });
@@ -4471,8 +4570,10 @@ function updateFilterBadge() {
   const n = activeFilterCount();
   btn.innerHTML = (open ? 'Filter ausblenden ▲' : 'Filter &amp; Sortierung ▼')
     + (n > 0 ? ` <span class="ft-badge">${n}</span>` : '');
+  if (typeof updateSenderChips === 'function') updateSenderChips();
 }
 function toggleFilters() {
+  if (typeof updateSenderChips === 'function') updateSenderChips();
   const f = document.querySelector('.filters');
   f.classList.toggle('open');
   try { localStorage.setItem('metaMediathek_filtersOpen', f.classList.contains('open') ? '1' : ''); } catch (e) {}
@@ -4485,6 +4586,103 @@ try {
   }
 } catch (e) {}
 updateFilterBadge();
+
+// ─── Geschmacks-Signale local-first: Daumen + „Nicht interessiert" ───
+// (GUI-Research: implizit sammeln, explizit minimal; alles bleibt im Gerät.
+// „Nicht interessiert" wirkt NUR auf Empfehlungs-Reihen und Geschmacks-Feed —
+// die Suche zeigt weiterhin alles, das bleibt das Versprechen der App.)
+let ratingsCache = null, hiddenCache = null;
+function loadRatings() {
+  if (ratingsCache) return ratingsCache;
+  try { ratingsCache = JSON.parse(localStorage.getItem('metaMediathek_ratings') || '{}'); } catch { ratingsCache = {}; }
+  if (typeof ratingsCache !== 'object' || !ratingsCache) ratingsCache = {};
+  return ratingsCache;
+}
+function saveRatings(r) { ratingsCache = r; try { localStorage.setItem('metaMediathek_ratings', JSON.stringify(r)); } catch (e) {} }
+function getRating(item) { return loadRatings()[getItemKey(item)] || 0; }
+function loadHidden() {
+  if (hiddenCache) return hiddenCache;
+  try { hiddenCache = JSON.parse(localStorage.getItem('metaMediathek_hidden') || '{}'); } catch { hiddenCache = {}; }
+  if (typeof hiddenCache !== 'object' || !hiddenCache) hiddenCache = {};
+  return hiddenCache;
+}
+function saveHidden(h) { hiddenCache = h; try { localStorage.setItem('metaMediathek_hidden', JSON.stringify(h)); } catch (e) {} }
+function hideKeyOf(item) { return normDE(((item.topic || item.title) || '').trim()); }
+function isHiddenItem(item) { const k = hideKeyOf(item); return !!(k && loadHidden()[k]); }
+
+function renderRateButtons(idx) {
+  const item = displayedResults[idx];
+  if (!item || item._series) return '';
+  const r = getRating(item);
+  const hid = isHiddenItem(item);
+  return `<button type="button" class="rate-btn ${r === 1 ? 'active-up' : ''}" onclick="rateItem(${idx}, 1)" title="Gefällt mir — hebt diesen Titel im Geschmacks-Ranking">👍</button>
+      <button type="button" class="rate-btn ${r === -1 ? 'active-down' : ''}" onclick="rateItem(${idx}, -1)" title="Gefällt mir nicht — senkt diesen Titel im Geschmacks-Ranking">👎</button>
+      <button type="button" class="hide-btn ${hid ? 'active' : ''}" onclick="toggleHideItem(${idx})" title="${hid ? 'Sendung wieder in die Empfehlungen aufnehmen' : 'Nicht interessiert — Sendung aus den Empfehlungs-Reihen ausblenden (die Suche zeigt weiterhin alles)'}">🚫</button>`;
+}
+function refreshCardAt(idx) {
+  const grid = document.getElementById('resultsGrid');
+  const item = displayedResults[idx];
+  if (!grid.children[idx] || !item) return;
+  grid.children[idx].outerHTML = item._series
+    ? (viewMode === 'list' ? renderSeriesRow(item, idx) : renderSeriesCard(item, idx))
+    : (viewMode === 'list' ? renderRow(item, idx) : renderCard(item, idx));
+}
+function rateItem(idx, dir) {
+  const item = displayedResults[idx];
+  if (!item || item._series) return;
+  const key = getItemKey(item);
+  const rt = loadRatings();
+  if (rt[key] === dir) delete rt[key]; else rt[key] = dir;
+  saveRatings(rt);
+  refreshCardAt(idx);
+  if (document.getElementById('modal').classList.contains('active')) showDetail(idx);
+}
+function toggleHideItem(idx) {
+  const item = displayedResults[idx];
+  if (!item || item._series) return;
+  const key = hideKeyOf(item);
+  if (!key) return;
+  const h = loadHidden();
+  if (h[key]) delete h[key]; else h[key] = { label: (item.topic || item.title), ts: Date.now() };
+  saveHidden(h);
+  if (document.getElementById('modal').classList.contains('active')) showDetail(idx);
+  applySortAndFilter(); // Reihen/Feed neu aufbauen; Suche bleibt unberührt
+}
+function clearHidden() { saveHidden({}); applySortAndFilter(); }
+
+// ─── Sender-Chips: sichtbarer Kernfilter, gekoppelt an das Dropdown ───
+function updateSenderChips() {
+  const val = document.getElementById('filterChannel').value;
+  document.querySelectorAll('#senderChips .schip').forEach(c =>
+    c.classList.toggle('active', (c.dataset.ch || '') === val));
+}
+document.getElementById('senderChips').addEventListener('click', e => {
+  const c = e.target.closest('.schip');
+  if (!c) return;
+  document.getElementById('filterChannel').value = c.dataset.ch || '';
+  updateSenderChips();
+  onServerFilterChange();
+});
+
+// ─── Mobile Bottom-Tab-Bar ───
+function tabbarGo(what) {
+  if (what === 'home') { goHome(); return; }
+  if (what === 'search') {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => document.getElementById('searchInput').focus(), 350);
+    return;
+  }
+  if (what === 'watchlist') {
+    const panel = document.getElementById('watchlistPanel');
+    if (!panel.classList.contains('active')) toggleWatchlistPanel();
+    setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+    return;
+  }
+  if (what === 'filter') {
+    if (!document.querySelector('.filters').classList.contains('open')) toggleFilters();
+    document.querySelector('.subheader').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
 
 // ─── Init ───
 document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') handleSearch(); });
@@ -4762,7 +4960,9 @@ if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.leng
     '#mmFbNote{font-size:11px;opacity:.6;margin:0 0 10px;}' +
     /* Platz für den Button freihalten, damit er Pagination/Inhalte nicht verdeckt */
     'body{padding-bottom:64px;}' +
-    '@media(max-width:640px){#mmFbBtn{padding:7px 11px;font-size:12px;border-radius:16px;}}';
+    '@media(max-width:640px){#mmFbBtn{padding:7px 11px;font-size:12px;border-radius:16px;}}' +
+    /* Ueber der Bottom-Tab-Bar schweben statt sie zu verdecken */
+    '@media(max-width:768px){#mmFbBtn{bottom:calc(72px + env(safe-area-inset-bottom));}}';
   document.head.appendChild(css);
 
   var btn = document.createElement('button');
