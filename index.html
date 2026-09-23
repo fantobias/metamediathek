@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-09-23.1">
+<meta name="mm-build" content="2026-09-23.2">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -1092,6 +1092,35 @@ let lastResults = [];       // raw mediathek results
 let enrichedResults = [];   // with TMDB data + taste scores (master list)
 let displayedResults = [];  // currently displayed (after filter/sort)
 let tmdbCache = {};         // "topic|||title" -> TMDB-Ergebnis (oder null = kein Match)
+// Persistenz: dieselben ~200 Start-Treffer lösten bei jedem Besuch erneut
+// hunderte TMDB-Suchen aus (Telemetrie: TMDB-Proxy war der größte api_slow-
+// Treiber). Cache überlebt jetzt 14 Tage im localStorage; null-Ergebnisse
+// ("kein Match") werden mitgespeichert, denn gerade die kosteten die meisten
+// Requests. Interne Felder (_details …) bleiben draußen.
+const TMDB_CACHE_LS = 'metaMediathek_tmdbCache';
+let tmdbCacheT0 = Date.now();
+let tmdbCacheDirty = false;
+try {
+  const c = JSON.parse(localStorage.getItem(TMDB_CACHE_LS) || 'null');
+  if (c && c.v === 2 && Date.now() - (c.t || 0) < 14 * 86400 * 1000) {
+    tmdbCache = c.d || {};
+    tmdbCacheT0 = c.t;
+  }
+} catch (e) { /* localStorage nicht verfügbar → rein flüchtiger Cache */ }
+function saveTmdbCache() {
+  if (!tmdbCacheDirty) return;
+  tmdbCacheDirty = false;
+  try {
+    let entries = Object.entries(tmdbCache);
+    if (entries.length > 1500) { entries = entries.slice(-1500); tmdbCache = Object.fromEntries(entries); }
+    localStorage.setItem(TMDB_CACHE_LS, JSON.stringify(
+      { v: 2, t: tmdbCacheT0, d: tmdbCache },
+      (k, v) => (k.startsWith('_') ? undefined : v)
+    ));
+  } catch (e) { /* voll/blockiert → beim nächsten Mal erneut */ }
+}
+setInterval(saveTmdbCache, 20000);
+window.addEventListener('pagehide', saveTmdbCache);
 // „Ein Film wie …"-Modus: gesetzt, solange die Ergebnisliste TMDB-Empfehlungen
 // zu einer Freitext-Referenz zeigt ({label, checked}); null = normale Suche
 let similarRef = null;
@@ -1550,7 +1579,9 @@ function tmdbSearch(title, topic) {
   const cacheKey = `${topic}|||${title}`;
   if (tmdbCache[cacheKey] !== undefined) return Promise.resolve(tmdbCache[cacheKey]);
   if (tmdbInflight.has(cacheKey)) return tmdbInflight.get(cacheKey);
-  const p = tmdbSearchUncached(title, topic).finally(() => tmdbInflight.delete(cacheKey));
+  const p = tmdbSearchUncached(title, topic)
+    .then(r => { tmdbCacheDirty = true; return r; })
+    .finally(() => tmdbInflight.delete(cacheKey));
   tmdbInflight.set(cacheKey, p);
   return p;
 }
@@ -2245,6 +2276,13 @@ function renderOgPoster(urlWebsite) {
   if (ogFailed.has(urlWebsite)) return '';
   return `<img class="og-poster" src="/api/ogimage?url=${encodeURIComponent(urlWebsite)}" data-og="${escAttr(urlWebsite)}" alt="" onerror="ogFail(this)">`;
 }
+// Index-Items bringen ihr Sendungsbild (ARD/ZDF-CDN) schon mit — dann direkt
+// einbinden statt einen /api/ogimage-Roundtrip pro Karte zu bezahlen
+function renderSenderPoster(item, urlWebsite) {
+  const direct = safeUrl(item && item.image);
+  if (direct) return `<img class="og-poster" src="${escAttr(direct)}" alt="" loading="lazy" onerror="this.remove()">`;
+  return renderOgPoster(urlWebsite);
+}
 
 // ─── Channel & Genre helpers ───
 function getChannelClass(ch) {
@@ -2692,6 +2730,15 @@ async function enrichWithTMDB_background(results) {
     const promises = batch.map(async (item) => {
       if (ctrl.cancelled) return;
       if (item._tmdb !== undefined) { done++; return; } // already enriched
+      // Index-Items tragen die LLM-Gattung: echte Nachrichten matchen nie
+      // sinnvoll auf TMDB — 3-6 Suchanfragen pro Item gespart, Ergebnis
+      // ist dasselbe wie bisher (null = kein Match). Satire/Shows ("heute
+      // show") haben Gattung Show und werden weiterhin gesucht.
+      if (item.gattung === 'Nachrichten') {
+        item._tmdb = null;
+        item._tasteScore = scoreTaste(item, null, tasteKeywords);
+        done++; return;
+      }
       const tmdb = await tmdbSearch(item.title, item.topic);
       if (ctrl.cancelled) return;
       item._tmdb = tmdb;
@@ -2780,7 +2827,7 @@ function renderCard(item, idx, ep = false) {
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
             : renderPosterPlaceholder(item, genres, chClass) + (API_MODE && urlWebsite
-              ? renderOgPoster(urlWebsite)
+              ? renderSenderPoster(activeItem.image ? activeItem : item, urlWebsite)
               : '')}
         </div>
         <div class="card-body">
@@ -2909,8 +2956,10 @@ function showDetail(idx) {
   const mediathekDesc = item.description && tmdb?.overview && item.description !== tmdb.overview
     ? item.description : '';
 
-  const modalOgUrl = API_MODE && !(tmdb && tmdb.poster) && safeUrl(activeItem.url_website)
-    ? `/api/ogimage?url=${encodeURIComponent(safeUrl(activeItem.url_website))}` : '';
+  const modalOgUrl = !(tmdb && tmdb.poster) && safeUrl(activeItem.image || item.image)
+    ? safeUrl(activeItem.image || item.image)
+    : (API_MODE && !(tmdb && tmdb.poster) && safeUrl(activeItem.url_website)
+      ? `/api/ogimage?url=${encodeURIComponent(safeUrl(activeItem.url_website))}` : '');
 
   document.getElementById('modalContent').innerHTML = `
     <div class="modal-poster-row">
@@ -3258,7 +3307,7 @@ function renderSeriesCard(s, idx) {
           ${tmdb && tmdb.poster_sm
             ? `<img src="${escAttr(tmdb.poster_sm)}" alt="Poster" loading="lazy">`
             : renderPosterPlaceholder(rep, genres, chClass) + (API_MODE && safeUrl(rep.url_website)
-              ? renderOgPoster(safeUrl(rep.url_website))
+              ? renderSenderPoster(rep, safeUrl(rep.url_website))
               : '')}
         </div>
         <div class="card-body">
@@ -4516,22 +4565,39 @@ function updateHomeRows(show) {
     }
     return out.length >= 4 ? out : [];
   };
-  const themedRow = (id, title, pred) => {
-    const idxs = pickIdx(pred);
+  const themedRow = (id, title, pred, sortFn) => {
+    let idxs = pickIdx(pred);
+    if (sortFn && idxs.length) idxs = [...idxs].sort(sortFn);
     return homeRowHtml(id, title, '', '', idxs.map(renderHomeTile).join(''), idxs.length);
   };
+  // LLM-Gattung aus dem eigenen Index (nur Index-Items; MVW-Items: '')
+  const gatOf = r => repOf(r).gattung || '';
   const tsOf = r => r._series ? Math.max(...r.episodes.map(e => e.timestamp || 0)) : (r.timestamp || 0);
   parts.push(themedRow('new', '🆕 Neu diese Woche', r => tsOf(r) >= now - 7 * 86400));
+  // „Bald offline": echte Depublikationsdaten kommen seit dem Hybrid-Backend
+  // aus dem eigenen Index mit (available_to); knappste zuerst
+  const availOf = r => repOf(r).available_to || 0;
+  parts.push(themedRow('expiring', '⏳ Bald offline', r => {
+    const a = availOf(r);
+    return a > now && a - now <= 7 * 86400;
+  }, (a, b) => availOf(displayedResults[a]) - availOf(displayedResults[b])));
   // Spielfilme (Feedback #1261: Magazinformate wie "Wie geht das?" rutschten
   // über den Laufzeit-Fallback hinein): Fragezeichen-Topics und Magazin-Sendungen
   // raus; der Fallback greift nur noch ohne jedes Faktual-Genre-Signal
   const magazineLike = r => /\?\s*$/.test((r.topic || '').trim()) || isNewsMagazineTopic(r.topic);
   const FACTUAL = ['Dokumentation', 'Dokumentarfilm', 'Natur', 'Wissenschaft', 'Geschichte', 'Politik', 'Kultur', 'Sport', 'Musik'];
+  // Gattung (LLM) schlägt die Wort-Heuristik; ohne Gattung gilt sie weiter.
+  // Der Laufzeit-Fallback greift nicht mehr, wenn die Gattung faktual ist.
+  const FACTUAL_GAT = ['Nachrichten', 'Magazin', 'Doku', 'Reportage', 'Wissen', 'Show', 'Sport', 'Musik', 'Kinder'];
   parts.push(themedRow('movies', '🎬 Spielfilme', r => !r._series && !magazineLike(r)
-    && (gOf(r).includes('Spielfilm')
-      || ((r.duration || 0) >= 4800 && !FACTUAL.some(g => gOf(r).includes(g))))));
-  parts.push(themedRow('docs', '🌍 Dokus & Reportagen', r => gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm')));
-  parts.push(themedRow('crime', '🔎 Krimis & Thriller', r => gOf(r).includes('Krimi') || gOf(r).includes('Thriller')));
+    && (gatOf(r) === 'Film'
+      || (gatOf(r) !== '' && FACTUAL_GAT.includes(gatOf(r)) ? false
+        : (gOf(r).includes('Spielfilm')
+          || ((r.duration || 0) >= 4800 && !FACTUAL.some(g => gOf(r).includes(g))))))));
+  parts.push(themedRow('docs', '🌍 Dokus & Reportagen', r => gatOf(r) === 'Doku' || gatOf(r) === 'Reportage'
+    || gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm')));
+  parts.push(themedRow('crime', '🔎 Krimis & Thriller', r => gatOf(r) === 'Krimi'
+    || gOf(r).includes('Krimi') || gOf(r).includes('Thriller')));
 
   const html = parts.filter(Boolean).join('');
   wrap.innerHTML = html;
@@ -4859,12 +4925,26 @@ if (tasteKeywords && tasteKeywords.searchTerms && tasteKeywords.searchTerms.leng
   window.addEventListener('pagehide', function () { flush(true); });
 
   // --- Basis-Event ---
-  ev('session_start', {
-    vw: window.innerWidth, vh: window.innerHeight,
-    touch: 'ontouchstart' in window,
-    lang: navigator.language,
-    build: document.querySelector('meta[name="mm-build"]') ? document.querySelector('meta[name="mm-build"]').content : ''
-  });
+  // Messbug W32-W38: vw kam als 0 an (innerWidth zu früh abgefragt).
+  // Robust messen und notfalls bis DOMContentLoaded aufschieben.
+  function viewportNow() {
+    var de = document.documentElement;
+    return {
+      vw: window.innerWidth || (de && de.clientWidth) || (window.screen && screen.width) || 0,
+      vh: window.innerHeight || (de && de.clientHeight) || (window.screen && screen.height) || 0
+    };
+  }
+  function sendSessionStart() {
+    var v = viewportNow();
+    ev('session_start', {
+      vw: v.vw, vh: v.vh,
+      touch: 'ontouchstart' in window,
+      lang: navigator.language,
+      build: document.querySelector('meta[name="mm-build"]') ? document.querySelector('meta[name="mm-build"]').content : ''
+    });
+  }
+  if (viewportNow().vw > 0 || document.readyState !== 'loading') sendSessionStart();
+  else document.addEventListener('DOMContentLoaded', sendSessionStart);
 
   // --- Fehler automatisch melden (sofort, nicht gepuffert) ---
   function reportError(kind, msg, extra) {
