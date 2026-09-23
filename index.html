@@ -3,8 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="robots" content="noindex, nofollow">
-<meta name="mm-build" content="2026-09-23.2">
+<meta name="robots" content="index, follow">
+<meta name="description" content="MetaMediathek — alle deutschen Mediatheken auf einen Blick: ARD, ZDF, arte, 3sat, ORF und SRF gemeinsam durchsuchen, mit Merkliste und persönlichen Empfehlungen. Kostenlos, ohne Anmeldung.">
+<link rel="canonical" href="https://metamediathek.pages.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MetaMediathek">
+<meta property="og:title" content="MetaMediathek — Alle deutschen Mediatheken auf einen Blick">
+<meta property="og:description" content="ARD, ZDF, arte, 3sat, ORF und SRF gemeinsam durchsuchen — mit Merkliste und persönlichen Empfehlungen. Kostenlos, ohne Anmeldung.">
+<meta property="og:url" content="https://metamediathek.pages.dev/">
+<meta name="theme-color" content="#0f1117">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
+<meta name="mm-build" content="2026-09-23.3">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -164,7 +173,7 @@
   /* Skeleton-Loading: Platzhalter in Karten-Geometrie statt Spinner */
   .loading { padding: 16px 30px; align-items: stretch; }
   .sk-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px; width: 100%;
   }
   .sk-card {
@@ -223,7 +232,7 @@
   /* Grid */
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px; padding: 24px 30px;
   }
 
@@ -369,14 +378,83 @@
     outline: 2px solid var(--accent); outline-offset: 2px;
     border-color: var(--accent);
   }
+  /* Hero-Bühne (Startseite): großes Key-Visual mit Titel und CTAs */
+  .hero {
+    position: relative; border-radius: var(--radius); overflow: hidden;
+    margin: 0 0 20px; border: 1px solid var(--border); cursor: pointer;
+    background: var(--surface);
+  }
+  .hero-media { width: 100%; aspect-ratio: 21 / 9; max-height: 440px; position: relative; background: var(--surface2); }
+  .hero-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .hero-media::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(10,12,18,0.92) 0%, rgba(10,12,18,0.35) 45%, transparent 75%),
+                linear-gradient(to right, rgba(10,12,18,0.55), transparent 55%);
+    pointer-events: none;
+  }
+  .hero-content { position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 24px; max-width: 680px; z-index: 2; }
+  .hero-kicker { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .hero-channel {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 3px 9px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  .hero-meta { font-size: 12px; color: rgba(232,234,237,0.75); }
+  .hero-title {
+    font-size: clamp(20px, 3vw, 32px); font-weight: 800; line-height: 1.15; margin-bottom: 8px;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+  }
+  .hero-desc {
+    font-size: 13px; line-height: 1.5; color: rgba(232,234,237,0.85); margin-bottom: 14px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .hero-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  @media (max-width: 768px) {
+    .hero-media { aspect-ratio: 16 / 9; }
+    .hero-content { padding: 14px 14px; }
+    .hero-desc { -webkit-line-clamp: 2; font-size: 12px; }
+  }
+
+  /* Rubrik-Hubs: primäres Browsing (LLM-Gattung aus dem eigenen Index) */
+  .hubs {
+    display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 12px;
+    scrollbar-width: none;
+  }
+  .hubs::-webkit-scrollbar { display: none; }
+  .hub {
+    font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: 18px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+    cursor: pointer; white-space: nowrap; transition: all 0.15s; flex-shrink: 0;
+  }
+  .hub:hover { border-color: var(--accent); color: var(--accent); }
+  .hub.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .hub:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* 16:9-Kachel: Bild oben in voller Breite (Ziel-GUI-Umbau 23.09.),
+     Sender-Badge und Dauer liegen als Overlay auf dem Bild */
   .card-poster-row {
-    display: flex; gap: 0;
+    display: flex; flex-direction: column; gap: 0;
   }
   .card-poster {
-    width: 120px; min-height: 170px; flex-shrink: 0;
+    width: 100%; aspect-ratio: 16 / 9; flex-shrink: 0;
     background: var(--surface2); display: flex; align-items: center; justify-content: center;
     overflow: hidden; position: relative;
   }
+  .card-poster::after {
+    content: ''; position: absolute; inset: auto 0 0 0; height: 44%;
+    background: linear-gradient(to top, rgba(10,12,18,0.75), transparent);
+    pointer-events: none; z-index: 2;
+  }
+  .p-badge {
+    position: absolute; top: 8px; left: 8px; z-index: 3;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 3px 8px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  .p-dur {
+    position: absolute; bottom: 7px; right: 8px; z-index: 3;
+    font-size: 11px; font-weight: 600; color: #fff;
+    background: rgba(10,12,18,0.55); padding: 2px 7px; border-radius: 4px;
+  }
+  .ico { vertical-align: -2px; flex-shrink: 0; }
   /* og:image-Sendungsbild: liegt über dem Platzhalter, verschwindet bei Ladefehler */
   .og-poster {
     position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
@@ -390,7 +468,7 @@
   /* Gestalteter Platzhalter, wenn TMDB kein Poster liefert
      (Magazin-/Regionalbeiträge existieren dort nicht) */
   .poster-ph {
-    width: 100%; height: 100%; min-height: 170px;
+    width: 100%; height: 100%;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 10px; padding: 10px; text-align: center;
     background: linear-gradient(160deg, var(--ph-a, #262b3a) 0%, #14161e 100%);
@@ -401,7 +479,7 @@
     text-transform: uppercase; color: rgba(232,234,237,0.45);
     overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
-  .card-body { padding: 14px; flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .card-body { padding: 12px 14px 10px; flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .card-header-row {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
     margin-bottom: 6px;
@@ -703,7 +781,6 @@
       padding-left: max(12px, env(safe-area-inset-left));
       padding-right: max(12px, env(safe-area-inset-right));
     }
-    .card-poster { width: 90px; min-height: 130px; }
     /* Touch-Targets: min. 44px (Apple HIG) */
     .card-actions .btn, .bookmark-btn, .rate-btn, .hide-btn {
       min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
@@ -772,7 +849,7 @@
     </div>
     <div class="header-right">
       <button class="watchlist-toggle" id="watchlistToggle" onclick="toggleWatchlistPanel()">
-        📌 Merkliste <span class="wl-count" id="wlCount">0</span>
+        <svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg> Merkliste <span class="wl-count" id="wlCount">0</span>
       </button>
       <button class="profile-toggle" id="profileToggle" onclick="toggleTastePanel()">
         🎯 Profil
@@ -799,8 +876,8 @@
     <!-- Ansicht-Umschalter sichtbar außerhalb des Filterpanels (Feedback #1264:
          im eingeklappten Panel war er nicht mehr auffindbar) -->
     <div class="view-toggle" role="group" aria-label="Darstellung">
-      <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht">⊞ Kacheln</button>
-      <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht">≡ Liste</button>
+      <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> Kacheln</button>
+      <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg> Liste</button>
     </div>
   </div>
   <div class="filters">
@@ -919,6 +996,17 @@
     </div>
   </div>
 
+  <div class="hubs" id="hubBar" role="tablist" aria-label="Rubriken">
+    <button type="button" class="hub active" data-hub="" onclick="setHub('')">Start</button>
+    <button type="button" class="hub" data-hub="Film" onclick="setHub('Film')">Filme</button>
+    <button type="button" class="hub" data-hub="Serie" onclick="setHub('Serie')">Serien</button>
+    <button type="button" class="hub" data-hub="Doku,Reportage" onclick="setHub('Doku,Reportage')">Dokus</button>
+    <button type="button" class="hub" data-hub="Krimi" onclick="setHub('Krimi')">Krimis</button>
+    <button type="button" class="hub" data-hub="Wissen" onclick="setHub('Wissen')">Wissen</button>
+    <button type="button" class="hub" data-hub="Show" onclick="setHub('Show')">Shows</button>
+    <button type="button" class="hub" data-hub="Kinder" onclick="setHub('Kinder')">Kinder</button>
+  </div>
+
   <div class="chips sender-chips" id="senderChips">
     <span class="schip active" data-ch="">Alle Sender</span>
     <span class="schip" data-ch="ARD">ARD</span>
@@ -932,20 +1020,15 @@
   </div>
 
   <div class="chips" id="quickChips">
-    <span class="chip" data-term="Spielfilm" onclick="quickSearch('Spielfilm')">Spielfilme</span>
-    <span class="chip" data-term="Dokumentarfilm" onclick="quickSearch('Dokumentarfilm')">Dokumentarfilme</span>
-    <span class="chip" data-term="Krimi" onclick="quickSearch('Krimi')">Krimis</span>
     <span class="chip" data-term="Tatort" onclick="quickSearch('Tatort')">Tatort</span>
     <span class="chip" data-term="Polizeiruf" onclick="quickSearch('Polizeiruf')">Polizeiruf 110</span>
     <span class="chip" data-term="Thriller" onclick="quickSearch('Thriller')">Thriller</span>
     <span class="chip" data-term="Drama" onclick="quickSearch('Drama')">Drama</span>
     <span class="chip" data-term="Komödie" onclick="quickSearch('Komödie')">Komödien</span>
-    <span class="chip" data-term="Dokumentation" onclick="quickSearch('Dokumentation')">Dokus</span>
     <span class="chip" data-term="Natur" onclick="quickSearch('Natur')">Natur</span>
     <span class="chip" data-term="Geschichte" onclick="quickSearch('Geschichte')">Geschichte</span>
     <span class="chip" data-term="Science Fiction" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
     <span class="chip" data-term="Liebe" onclick="quickSearch('Liebe')">Liebesfilme</span>
-    <span class="chip" data-term="Kinderfilm" onclick="quickSearch('Kinderfilm')">Kinderfilme</span>
   </div>
 
   <div class="results-meta">
@@ -974,16 +1057,17 @@
 
 <!-- Watchlist Panel -->
 <div class="watchlist-panel" id="watchlistPanel">
-  <h3>📌 Deine Merkliste</h3>
+  <h3><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg> Deine Merkliste</h3>
   <div class="wl-filter-row" id="wlFilterRow">
     <span class="wl-person-chip active" data-person="">Alle</span>
   </div>
   <div class="wl-items" id="wlItems">
-    <div style="color:var(--text-dim);text-align:center;padding:20px;">Noch keine Filme gemerkt. Klicke auf 📌 bei einem Film, um ihn hier zu speichern.</div>
+    <div style="color:var(--text-dim);text-align:center;padding:20px;">Noch keine Filme gemerkt. Klicke auf das Merken-Symbol bei einem Film, um ihn hier zu speichern.</div>
   </div>
 </div>
 
 <div id="content">
+  <div class="hero" id="hero" hidden></div>
   <div class="home-rows" id="homeRows" hidden></div>
   <div class="home-grid-head" id="homeGridHead" hidden>Alle aktuellen Sendungen</div>
   <div class="loading" id="loadingState" style="display:none;">
@@ -1003,10 +1087,10 @@
 </div>
 
 <nav class="tabbar" id="tabbar" aria-label="Hauptnavigation">
-  <button type="button" class="tb-item" onclick="tabbarGo('home')"><span class="tb-ico">🏠</span><span>Start</span></button>
-  <button type="button" class="tb-item" onclick="tabbarGo('search')"><span class="tb-ico">🔍</span><span>Suche</span></button>
-  <button type="button" class="tb-item" onclick="tabbarGo('watchlist')"><span class="tb-ico">📌</span><span>Merkliste</span></button>
-  <button type="button" class="tb-item" onclick="tabbarGo('filter')"><span class="tb-ico">⚙️</span><span>Filter</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('home')"><span class="tb-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg></span><span>Start</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('search')"><span class="tb-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span><span>Suche</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('watchlist')"><span class="tb-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg></span><span>Merkliste</span></button>
+  <button type="button" class="tb-item" onclick="tabbarGo('filter')"><span class="tb-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg></span><span>Filter</span></button>
 </nav>
 
 <!-- Global Bookmark Dropdown -->
@@ -2561,6 +2645,31 @@ function safeUrl(u) {
   return /^https?:\/\//i.test(t) ? t : '';
 }
 
+// ─── Icon-System: einheitliche Inline-SVGs (Feather-Stil) statt Emoji-Mix ───
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  bookmark: '<path d="M6 3h12v18l-6-4-6 4z"/>',
+  filter: '<path d="M3 5h18l-7 8v6l-4-2v-4z"/>',
+  thumbUp: '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>',
+  thumbDown: '<path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z"/><path d="M17 2h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"/>',
+  eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  list: '<line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+  sparkle: '<path d="m12 3 2.1 5.6L20 11l-5.9 2.4L12 19l-2.1-5.6L4 11l5.9-2.4z"/>',
+  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9.5v3.5l2.5 2.5"/><path d="M9 2h6"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>',
+  play: '<path d="M7 4.5v15l13-7.5z" fill="currentColor" stroke="none"/>',
+  tv: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="m8 2 4 5 4-5"/>',
+  spy: '<circle cx="10" cy="10" r="6"/><path d="m20.5 20.5-6.2-6.2"/><path d="M7.5 10a2.5 2.5 0 0 1 2.5-2.5"/>',
+};
+function ico(name, size = 16) {
+  const p = ICONS[name];
+  return p ? `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>` : '';
+}
+
 // ─── Mediathek API ───
 function buildQuery() {
   const query = document.getElementById('searchInput').value.trim();
@@ -2582,6 +2691,8 @@ function buildQuery() {
     query
   });
   if (channel) queries.push({ fields: ['channel'], query: channel });
+  // Rubrik-Hub: filtert serverseitig über die LLM-Gattung des eigenen Index
+  if (activeHub) queries.push({ fields: ['gattung'], query: activeHub });
 
   const payload = {
     queries, sortBy: apiSort[0], sortOrder: apiSort[1],
@@ -2829,10 +2940,12 @@ function renderCard(item, idx, ep = false) {
             : renderPosterPlaceholder(item, genres, chClass) + (API_MODE && urlWebsite
               ? renderSenderPoster(activeItem.image ? activeItem : item, urlWebsite)
               : '')}
+          <span class="p-badge ${chClass}">${escHtml(item.channel)}</span>
+          ${item.duration ? `<span class="p-dur">${fmtDuration(item.duration)}</span>` : ''}
         </div>
         <div class="card-body">
           <div class="card-header-row">
-            <div class="card-channel ${chClass}">${escHtml(item.channel)}</div>
+            <div class="card-topic" style="margin-bottom:0;flex:1;">${escHtml(item.topic)}${tmdb?.person_role ? ` · <span style="color:var(--orange)">${escHtml(tmdb.person_role)}</span>` : ''}</div>
             <div style="display:flex;align-items:center;gap:8px;">
               ${match ? `<span class="taste-match ${match.cls}">${match.text}</span>` : ''}
               ${rating
@@ -2840,8 +2953,7 @@ function renderCard(item, idx, ep = false) {
                 : `<span class="rating-na">–</span>`}
             </div>
           </div>
-          <div class="card-topic">${escHtml(item.topic)}${tmdb?.person_role ? ` · <span style="color:var(--orange)">${escHtml(tmdb.person_role)}</span>` : ''}</div>
-          <div class="card-title">${escHtml(item._variants ? stripVariantSuffix(item.title) : item.title)}</div>
+          <div class="card-title" style="margin-top:4px;">${escHtml(item._variants ? stripVariantSuffix(item.title) : item.title)}</div>
           <div class="card-genres">
             ${tmdbGenres.map(g => `<span class="genre-tag tmdb-genre">${g}</span>`).join('')}
             ${tmdbGenres.length === 0 ? genres.map(g => `<span class="genre-tag">${g}</span>`).join('') : ''}
@@ -2872,14 +2984,12 @@ function renderCard(item, idx, ep = false) {
       </div>` : ''}
       <div class="card-actions" onclick="event.stopPropagation()">
         ${urlWebsite
-          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" onclick="recordRecentIdx(${idx})" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">▶ Ansehen</a>`
+          ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" onclick="recordRecentIdx(${idx})" title="Beim Sender abspielen — beste Qualität, Untertitel & Co.">${ico('play', 13)} Ansehen</a>`
           : ''}
         ${urlVideo
           ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" class="btn btn-secondary btn-direct" onclick="recordRecentIdx(${idx})" title="Videodatei direkt öffnen (Download/VLC) — funktioniert oft auch noch, wenn die Mediathek-Seite offline ist">Direktlink</a>`
           : ''}
-        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">
-          📌
-        </button>
+        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">${ico('bookmark', 17)}</button>
         ${renderRateButtons(idx)}
       </div>
     </div>
@@ -3090,7 +3200,7 @@ function applySortAndFilter() {
   // einzelsender-lastig, voller Minuten-Schnipsel, Dubletten und News-Rauschen).
   // Nur in der Start-Ansicht — keine Suche, kein Chip, kein Profil-Feed, keine
   // eigene Sortier-/Filterwahl — und rein client-seitig, keine Extra-Anfragen.
-  const startView = !searchText && !activeQuickFilter && !feedView
+  const startView = !searchText && !activeQuickFilter && !feedView && !activeHub
     && sortVal === 'timestamp_desc' && !document.getElementById('filterChannel').value
     && (parseInt(document.getElementById('filterDurationMin').value) || 0) === 0;
   let curationApplied = false;
@@ -3309,10 +3419,10 @@ function renderSeriesCard(s, idx) {
             : renderPosterPlaceholder(rep, genres, chClass) + (API_MODE && safeUrl(rep.url_website)
               ? renderSenderPoster(rep, safeUrl(rep.url_website))
               : '')}
+          <span class="p-badge ${chClass}">${escHtml(chLabel)}</span>
         </div>
         <div class="card-body">
           <div class="card-header-row">
-            <div class="card-channel ${chClass}">${escHtml(chLabel)}</div>
             <span class="series-badge">${s.episodes.length} Folgen</span>
           </div>
           <div class="card-title" style="margin-top:8px;">${escHtml(s.topic)}</div>
@@ -3347,7 +3457,7 @@ function renderRow(item, idx, ep = false) {
       <span class="rrow-actions" onclick="event.stopPropagation()">
         ${urlWebsite ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" onclick="recordRecentIdx(${idx})" title="Beim Sender abspielen">▶</a>` : ''}
         ${urlVideo ? `<a href="${escAttr(urlVideo)}" target="_blank" rel="noopener" onclick="recordRecentIdx(${idx})" title="Videodatei direkt öffnen (Download/VLC)">⬇</a>` : ''}
-        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">📌</button>
+        <button class="bookmark-btn ${isBookmarked(item) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">${ico('bookmark', 16)}</button>
       </span>
     </div>
   `;
@@ -3442,6 +3552,7 @@ function syncStateToURL() {
     const set = (k, v, def) => { if (v !== def && v !== '') params.set(k, v); };
     set('q', document.getElementById('searchInput').value.trim(), '');
     set('sender', document.getElementById('filterChannel').value, '');
+    set('hub', activeHub, '');
     set('dmin', document.getElementById('filterDurationMin').value, '0');
     set('dmax', document.getElementById('filterDurationMax').value, '0');
     set('sort', document.getElementById('filterSort').value, 'timestamp_desc');
@@ -3461,6 +3572,7 @@ function restoreStateFromURL() {
     const apply = (k, id) => { if (params.has(k)) document.getElementById(id).value = params.get(k); };
     apply('q', 'searchInput');
     apply('sender', 'filterChannel');
+    if (params.has('hub')) setHub(params.get('hub'), true);
     apply('dmin', 'filterDurationMin');
     apply('dmax', 'filterDurationMax');
     apply('sort', 'filterSort');
@@ -3590,6 +3702,21 @@ function prevPage() {
 }
 
 let activeQuickFilter = '';
+
+// ─── Rubrik-Hubs (Filme/Serien/Dokus/…): Gattungs-Filter aus dem eigenen Index ───
+let activeHub = '';
+function setHub(g, skipSearch = false) {
+  activeHub = g || '';
+  document.querySelectorAll('#hubBar .hub').forEach(b =>
+    b.classList.toggle('active', (b.dataset.hub || '') === activeHub));
+  if (skipSearch) return;
+  const inp = document.getElementById('searchInput');
+  inp.value = '';
+  activeQuickFilter = '';
+  if (typeof updateChipHighlight === 'function') updateChipHighlight();
+  currentOffset = 0;
+  doSearch();
+}
 // Nutzertext, den ein Chip überschrieben hat — wird bei Chip-Abwahl wiederhergestellt
 // (Interplay-Test: "sherlock" tippen, Chip klicken, Chip abwählen → Text war weg)
 let prevSearchText = '';
@@ -4485,6 +4612,70 @@ function toggleHomeRow(id) {
     if (btn) btn.setAttribute('aria-expanded', c[id] ? 'false' : 'true');
   }
 }
+// ─── Hero-Bühne: bestes bildstarkes Stück der kuratierten Start-Treffer ───
+let heroKey = null; // gewählter Titel bleibt über Enrichment-Re-Renders stabil
+function heroImageOf(rep) {
+  return (rep._tmdb && rep._tmdb.backdrop) || safeUrl(rep.image) || '';
+}
+function renderHero(show) {
+  const el = document.getElementById('hero');
+  if (!el) return;
+  if (!show) { el.hidden = true; return; }
+  const repOfH = r => r._series ? r.rep : r;
+  const candIdx = [];
+  for (let i = 0; i < displayedResults.length && candIdx.length < 12; i++) {
+    const r = displayedResults[i];
+    if (!r) continue;
+    const rep = repOfH(r);
+    if (isHiddenItem(rep)) continue;
+    if ((rep.duration || 0) < 1200) continue;
+    const g = rep.gattung || '';
+    if (g === 'Nachrichten' || g === 'Magazin') continue;
+    if (!heroImageOf(rep)) continue;
+    candIdx.push(i);
+  }
+  if (!candIdx.length) { el.hidden = true; return; }
+  // Stabil bleiben, solange der gewählte Titel noch in den Kandidaten ist
+  let idx = candIdx.find(i => getItemKey(repOfH(displayedResults[i])) === heroKey);
+  if (idx === undefined) {
+    // bildstärkste Kandidaten bevorzugen: echte Gattung > nur Bild
+    const scored = [...candIdx].sort((a, b) => {
+      const ga = ['Film', 'Serie', 'Krimi', 'Doku'].includes(repOfH(displayedResults[a]).gattung || '') ? 0 : 1;
+      const gb = ['Film', 'Serie', 'Krimi', 'Doku'].includes(repOfH(displayedResults[b]).gattung || '') ? 0 : 1;
+      return ga - gb;
+    });
+    idx = scored[Math.floor(Math.random() * Math.min(5, scored.length))];
+    heroKey = getItemKey(repOfH(displayedResults[idx]));
+  }
+  const r = displayedResults[idx];
+  const rep = repOfH(r);
+  const tmdb = rep._tmdb;
+  const chClass = getChannelClass(rep.channel);
+  const img = heroImageOf(rep);
+  const title = r._series ? r.topic : (rep._variants ? stripVariantSuffix(rep.title) : rep.title);
+  const desc = (tmdb && tmdb.overview) || rep.description || rep._senderDesc || '';
+  const urlWebsite = safeUrl(getActiveVariantItem(rep).url_website);
+  const meta = [rep.topic && rep.topic !== title ? rep.topic : '', fmtDuration(rep.duration), fmtRelDate(rep.timestamp)]
+    .filter(Boolean).join(' · ');
+  el.innerHTML = `
+    <div class="hero-media"><img src="${escAttr(img)}" alt="" onerror="document.getElementById('hero').hidden = true"></div>
+    <div class="hero-content">
+      <div class="hero-kicker">
+        <span class="hero-channel ${chClass}">${escHtml(rep.channel)}</span>
+        <span class="hero-meta">${escHtml(meta)}</span>
+      </div>
+      <div class="hero-title">${escHtml(title)}</div>
+      ${desc ? `<div class="hero-desc">${escHtml(desc)}</div>` : ''}
+      <div class="hero-actions" onclick="event.stopPropagation()">
+        ${urlWebsite ? `<a href="${escAttr(urlWebsite)}" target="_blank" rel="noopener" class="btn btn-primary" onclick="recordRecentIdx(${idx})">${ico('play', 13)} Ansehen</a>` : ''}
+        <button type="button" class="btn btn-secondary" onclick="showDetail(${idx})">Details</button>
+        <button class="bookmark-btn ${isBookmarked(rep) ? 'bookmarked' : ''}" data-bmidx="${idx}" onclick="openBookmarkMenu(event, ${idx})" title="Merken" aria-label="Zur Merkliste hinzufügen">${ico('bookmark', 17)}</button>
+      </div>
+    </div>`;
+  el.onclick = () => showDetail(idx);
+  el.hidden = false;
+}
+
 function homeRowHtml(id, title, hint, action, tilesHtml, count) {
   if (!tilesHtml) return '';
   const collapsed = !!loadRowCollapsed()[id];
@@ -4508,6 +4699,8 @@ function updateHomeRows(show) {
   // Listen-Ansicht bleibt eine Liste: Kachel-Reihen nur in der Kachel-Ansicht
   // (Feedback #1264 — Rows überdeckten die umgeschaltete Liste)
   if (show && typeof viewMode !== 'undefined' && viewMode === 'list') show = false;
+  if (activeHub) show = false; // Rubrik-Ansicht: pures Grid statt Kuration
+  renderHero(show);
   homeRowsActive = !!show;
   const wrap = document.getElementById('homeRows');
   const head = document.getElementById('homeGridHead');
@@ -4522,7 +4715,7 @@ function updateHomeRows(show) {
   // 1) Zuletzt geöffnet (local-first-Verlauf)
   const rec = loadRecent().filter(w => w && w.title);
   if (rec.length > 0) {
-    parts.push(homeRowHtml('recent', '🕘 Zuletzt geöffnet',
+    parts.push(homeRowHtml('recent', ico('clock') + ' Zuletzt geöffnet',
       'nur auf diesem Gerät gespeichert',
       '<button class="hrow-action" onclick="clearRecent()">Verlauf löschen</button>',
       rec.map(w => {
@@ -4536,7 +4729,7 @@ function updateHomeRows(show) {
   // Depublizierung, genau dort ist die Warnung am wertvollsten
   const wl = loadWatchlist().slice().sort((a, b) => (b.added || 0) - (a.added || 0)).slice(0, 15);
   if (wl.length > 0) {
-    parts.push(homeRowHtml('watchlist', '📌 Deine Merkliste', '',
+    parts.push(homeRowHtml('watchlist', ico('bookmark') + ' Deine Merkliste', '',
       '<button class="hrow-action" onclick="toggleWatchlistPanel()">Verwalten</button>',
       wl.map(w => {
         const sub = [escHtml(fmtDuration(w.duration) || ''), storedExpiryWarn(w)].filter(Boolean).join(' · ');
@@ -4573,11 +4766,11 @@ function updateHomeRows(show) {
   // LLM-Gattung aus dem eigenen Index (nur Index-Items; MVW-Items: '')
   const gatOf = r => repOf(r).gattung || '';
   const tsOf = r => r._series ? Math.max(...r.episodes.map(e => e.timestamp || 0)) : (r.timestamp || 0);
-  parts.push(themedRow('new', '🆕 Neu diese Woche', r => tsOf(r) >= now - 7 * 86400));
+  parts.push(themedRow('new', ico('sparkle') + ' Neu diese Woche', r => tsOf(r) >= now - 7 * 86400));
   // „Bald offline": echte Depublikationsdaten kommen seit dem Hybrid-Backend
   // aus dem eigenen Index mit (available_to); knappste zuerst
   const availOf = r => repOf(r).available_to || 0;
-  parts.push(themedRow('expiring', '⏳ Bald offline', r => {
+  parts.push(themedRow('expiring', ico('timer') + ' Bald offline', r => {
     const a = availOf(r);
     return a > now && a - now <= 7 * 86400;
   }, (a, b) => availOf(displayedResults[a]) - availOf(displayedResults[b])));
@@ -4589,14 +4782,14 @@ function updateHomeRows(show) {
   // Gattung (LLM) schlägt die Wort-Heuristik; ohne Gattung gilt sie weiter.
   // Der Laufzeit-Fallback greift nicht mehr, wenn die Gattung faktual ist.
   const FACTUAL_GAT = ['Nachrichten', 'Magazin', 'Doku', 'Reportage', 'Wissen', 'Show', 'Sport', 'Musik', 'Kinder'];
-  parts.push(themedRow('movies', '🎬 Spielfilme', r => !r._series && !magazineLike(r)
+  parts.push(themedRow('movies', ico('film') + ' Spielfilme', r => !r._series && !magazineLike(r)
     && (gatOf(r) === 'Film'
       || (gatOf(r) !== '' && FACTUAL_GAT.includes(gatOf(r)) ? false
         : (gOf(r).includes('Spielfilm')
           || ((r.duration || 0) >= 4800 && !FACTUAL.some(g => gOf(r).includes(g))))))));
-  parts.push(themedRow('docs', '🌍 Dokus & Reportagen', r => gatOf(r) === 'Doku' || gatOf(r) === 'Reportage'
+  parts.push(themedRow('docs', ico('globe') + ' Dokus & Reportagen', r => gatOf(r) === 'Doku' || gatOf(r) === 'Reportage'
     || gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm')));
-  parts.push(themedRow('crime', '🔎 Krimis & Thriller', r => gatOf(r) === 'Krimi'
+  parts.push(themedRow('crime', ico('spy') + ' Krimis & Thriller', r => gatOf(r) === 'Krimi'
     || gOf(r).includes('Krimi') || gOf(r).includes('Thriller')));
 
   const html = parts.filter(Boolean).join('');
@@ -4681,9 +4874,9 @@ function renderRateButtons(idx) {
   if (!item || item._series) return '';
   const r = getRating(item);
   const hid = isHiddenItem(item);
-  return `<button type="button" class="rate-btn ${r === 1 ? 'active-up' : ''}" onclick="rateItem(${idx}, 1)" title="Gefällt mir — hebt diesen Titel im Geschmacks-Ranking">👍</button>
-      <button type="button" class="rate-btn ${r === -1 ? 'active-down' : ''}" onclick="rateItem(${idx}, -1)" title="Gefällt mir nicht — senkt diesen Titel im Geschmacks-Ranking">👎</button>
-      <button type="button" class="hide-btn ${hid ? 'active' : ''}" onclick="toggleHideItem(${idx})" title="${hid ? 'Sendung wieder in die Empfehlungen aufnehmen' : 'Nicht interessiert — Sendung aus den Empfehlungs-Reihen ausblenden (die Suche zeigt weiterhin alles)'}">🚫</button>`;
+  return `<button type="button" class="rate-btn ${r === 1 ? 'active-up' : ''}" onclick="rateItem(${idx}, 1)" title="Gefällt mir — hebt diesen Titel im Geschmacks-Ranking">${ico('thumbUp', 15)}</button>
+      <button type="button" class="rate-btn ${r === -1 ? 'active-down' : ''}" onclick="rateItem(${idx}, -1)" title="Gefällt mir nicht — senkt diesen Titel im Geschmacks-Ranking">${ico('thumbDown', 15)}</button>
+      <button type="button" class="hide-btn ${hid ? 'active' : ''}" onclick="toggleHideItem(${idx})" title="${hid ? 'Sendung wieder in die Empfehlungen aufnehmen' : 'Nicht interessiert — Sendung aus den Empfehlungs-Reihen ausblenden (die Suche zeigt weiterhin alles)'}">${ico('eyeOff', 15)}</button>`;
 }
 function refreshCardAt(idx) {
   const grid = document.getElementById('resultsGrid');

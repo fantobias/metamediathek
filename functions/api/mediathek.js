@@ -55,8 +55,15 @@ export async function onRequestPost(context) {
 async function hybridQuery(env, p) {
   const queries = Array.isArray(p.queries) ? p.queries : [];
   const chanQs = queries.filter((q) => Array.isArray(q.fields) && q.fields.length === 1 && q.fields[0] === 'channel');
-  const textQs = queries.filter((q) => !chanQs.includes(q));
-  if (chanQs.length > 1) return null; // baut die App nie — sicherheitshalber MVW
+  const gatQs = queries.filter((q) => Array.isArray(q.fields) && q.fields.length === 1 && q.fields[0] === 'gattung');
+  const textQs = queries.filter((q) => !chanQs.includes(q) && !gatQs.includes(q));
+  if (chanQs.length > 1 || gatQs.length > 1) return null; // baut die App nie — sicherheitshalber MVW
+
+  // Gattungs-Query (Rubrik-Hubs): nur der eigene Index kennt die LLM-Gattung.
+  // MVW kann hier nichts beitragen — reine Index-Route, Sender-Filter kombinierbar.
+  const gattungen = gatQs.length
+    ? String(gatQs[0].query || '').split(',').map((g) => g.trim()).filter(Boolean)
+    : null;
 
   const size = Math.max(1, Math.min(p.size || 30, 200));
   const offset = Math.max(0, Math.min(p.offset || 0, 2000));
@@ -64,6 +71,21 @@ async function hybridQuery(env, p) {
   const sortOrder = p.sortOrder === 'asc' ? 'asc' : 'desc';
 
   const ch = chanQs.length ? String(chanQs[0].query || '').trim() : '';
+
+  if (gattungen && gattungen.length) {
+    let spec = null;
+    if (ch) {
+      spec = INDEX_CHANNELS[ch] || null;
+      if (!spec) {
+        // Sender, den der Index (noch) nicht führt (arte/3sat/ORF/SRF/DW):
+        // ehrliches leeres Ergebnis statt falscher MVW-Volltexttreffer
+        return { result: { results: [], queryInfo: { totalResults: 0, resultCount: 0 } }, _backend: 'index' };
+      }
+    }
+    const r = await d1Search(env, textQs, spec, p, size, offset, sortBy, sortOrder, gattungen);
+    return { result: { results: r.items, queryInfo: { totalResults: r.total, resultCount: r.items.length } }, _backend: 'index' };
+  }
+
   if (ch) {
     if (MVW_ONLY.some((c) => c.toLowerCase() === ch.toLowerCase())) return null; // arte/3sat/ORF/SRF/DW -> MVW
     const spec = INDEX_CHANNELS[ch];
@@ -101,7 +123,7 @@ async function hybridQuery(env, p) {
 
 // Suche im eigenen Index. chanSpec null = alle Index-Inhalte (dann 3sat-Streuner
 // ausschließen, die kommen im "Alle"-Fall schon vom MVW-Zweig).
-async function d1Search(env, textQs, chanSpec, p, limit, offset, sortBy, sortOrder) {
+async function d1Search(env, textQs, chanSpec, p, limit, offset, sortBy, sortOrder, gattungen = null) {
   const COL = { title: 'e.title', topic: 'e.topic', description: 'e.description' };
   const where = [];
   const binds = [];
@@ -116,6 +138,11 @@ async function d1Search(env, textQs, chanSpec, p, limit, offset, sortBy, sortOrd
     }
   }
 
+  if (gattungen && gattungen.length) {
+    where.push(`en.gattung IN (${gattungen.map(() => '?').join(',')})`);
+    binds.push(...gattungen);
+  }
+
   if (chanSpec) {
     const parts = [];
     if (chanSpec.exact.length) {
@@ -124,7 +151,9 @@ async function d1Search(env, textQs, chanSpec, p, limit, offset, sortBy, sortOrd
     }
     for (const pre of chanSpec.prefix) { parts.push('lower(e.channel) LIKE ?'); binds.push(pre + '%'); }
     where.push('(' + parts.join(' OR ') + ')');
-  } else {
+  } else if (!gattungen) {
+    // Nur im "Alle Sender"-Merge nötig (Dubletten mit dem MVW-Zweig vermeiden);
+    // die Gattungs-Route hat keinen MVW-Zweig und zeigt bewusst alles im Index.
     where.push("lower(e.channel) <> '3sat'");
   }
 
