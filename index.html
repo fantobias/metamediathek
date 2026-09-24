@@ -13,7 +13,7 @@
 <meta property="og:url" content="https://metamediathek.pages.dev/">
 <meta name="theme-color" content="#0f1117">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
-<meta name="mm-build" content="2026-09-24.4">
+<meta name="mm-build" content="2026-09-24.5">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -328,9 +328,24 @@
   /* Serien-Stapel: mehrere Folgen einer Sendung als eine Kachel mit
      Karten-Stapel-Optik (zwei versetzte Kanten per box-shadow) */
   .card.series-stack {
-    box-shadow: 5px 5px 0 -1px var(--surface2), 5px 5px 0 0 var(--border),
-                10px 10px 0 -2px var(--surface), 10px 10px 0 0 var(--border);
-    margin-right: 10px; margin-bottom: 10px;
+    /* zwei sichtbare Karten „hinter" der Kachel (oben herausragend, schmaler) —
+       box-shadow statt Pseudo-Elementen, weil .card overflow:hidden hat */
+    margin-top: 18px;
+    border-color: rgba(79,140,255,0.55);
+    box-shadow: 0 -12px 0 -6px rgba(79,140,255,0.5), 0 -24px 0 -12px rgba(79,140,255,0.22);
+  }
+  .card.series-stack:hover {
+    box-shadow: 0 -12px 0 -6px rgba(79,140,255,0.75), 0 -24px 0 -12px rgba(79,140,255,0.4), 0 8px 30px rgba(0,0,0,0.4);
+  }
+  .p-stack {
+    position: absolute; bottom: 8px; left: 8px; z-index: 3; display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(10,12,18,0.82); color: #fff; font-size: 12px; font-weight: 700;
+    padding: 4px 9px; border-radius: 6px; border: 1px solid rgba(79,140,255,0.7);
+  }
+  .p-stack svg { width: 14px; height: 14px; }
+  .card.series-stack .series-hint {
+    display: inline-block; color: var(--accent); font-weight: 600; font-size: 12px;
+    border: 1px solid rgba(79,140,255,0.5); border-radius: 12px; padding: 3px 10px;
   }
   .series-badge {
     display: inline-block; background: var(--accent); color: #08101d;
@@ -2805,7 +2820,23 @@ async function fetchOwnProxy(payload) {
 
 // Generische Mediathek-Abfrage: erst eigener Proxy (API-Modus),
 // dann die bisherige Fallback-Kette (direkt → corsproxy → allorigins)
+// Feedback 24.09.: „die gleiche Suche dauert beim zweiten Mal genauso lang".
+// Jede erfolgreiche Antwort 10 Minuten merken (im Speicher, max. 300 Einträge);
+// zusätzlich cacht der Server identische Anfragen 5 Minuten am Cloudflare-Rand.
+const mvwMemo = new Map();
+const MVW_MEMO_MAX = 300, MVW_MEMO_TTL = 10 * 60 * 1000;
 async function fetchMediathek(payload) {
+  const memoKey = JSON.stringify(payload);
+  const m = mvwMemo.get(memoKey);
+  if (m && Date.now() - m.t < MVW_MEMO_TTL) return m.data;
+  const data = await fetchMediathekUncached(payload);
+  if (data && data.result) {
+    mvwMemo.set(memoKey, { t: Date.now(), data });
+    if (mvwMemo.size > MVW_MEMO_MAX) mvwMemo.delete(mvwMemo.keys().next().value);
+  }
+  return data;
+}
+async function fetchMediathekUncached(payload) {
   if (API_MODE) {
     // Zwei Versuche über den eigenen Proxy — ein einzelner Timeout (MVW hat
     // Lastspitzen) soll nicht sofort in die langsame Fallback-Kette führen
@@ -3488,10 +3519,11 @@ function renderSeriesCard(s, idx) {
               ? renderSenderPoster(rep, safeUrl(rep.url_website))
               : '')}
           <span class="p-badge ${chClass}">${escHtml(chLabel)}</span>
+          <span class="p-stack" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="14" height="12" rx="2"/><path d="M7 4h12a2 2 0 0 1 2 2v10"/></svg>${s.episodes.length} Folgen</span>
         </div>
         <div class="card-body">
           <div class="card-header-row">
-            <span class="series-badge">${s.episodes.length} Folgen</span>
+            <span class="series-badge">Sendereihe · ${s.episodes.length} Folgen</span>
           </div>
           <div class="card-title" style="margin-top:8px;">${escHtml(s.topic)}</div>
           <div class="card-topic">Neueste: ${fmtDate(newest)}</div>
@@ -4197,20 +4229,49 @@ async function searchPersonInMediathek(query, seq) {
     let mediathekResults = [];
     const statusEl = document.getElementById('loadingSub');
 
-    for (let i = 0; i < topTitles.length; i += PERSON_BATCH_SIZE) {
-      if (seq !== undefined && seq !== searchSeq) return []; // neue Suche gestartet → abbrechen
-      const batch = topTitles.slice(i, i + PERSON_BATCH_SIZE);
-      const batchPromises = batch.map(async (title) => {
+    // Performance (Feedback 24.09.: „Billy Wilder" ~60 s): Früher 50 Einzelanfragen
+    // à ~4 s in 4er-Gruppen. Jetzt fragt EINE Anfrage bis zu 10 Titel ab (Server-
+    // Route titleBatch: ein D1-Scan + eine MVW-Anfrage), 3 Anfragen parallel.
+    // Ältere Server ohne Batch-Unterstützung → automatisch Einzelabfragen wie früher.
+    const TITLE_CHUNK = 10, CHUNK_PARALLEL = 3;
+    const perTitleHits = new Map(); // Titel -> Kandidaten (vor den Filtern unten)
+    const chunks = [];
+    for (let i = 0; i < topTitles.length; i += TITLE_CHUNK) chunks.push(topTitles.slice(i, i + TITLE_CHUNK));
+    let batchSupported = true, doneTitles = 0;
+    const fetchSingle = async (title) => {
+      const d = await fetchMediathek({ queries: [{ fields: ['title', 'topic'], query: title }], sortBy: 'timestamp', sortOrder: 'desc', future: false, offset: 0, size: 5, duration_min: 0 });
+      perTitleHits.set(title, d?.result?.results || []);
+    };
+    const runChunk = async (chunk) => {
+      if (batchSupported) {
         try {
-          const payload = {
-            queries: [{ fields: ['title', 'topic'], query: title }],
-            sortBy: 'timestamp', sortOrder: 'desc',
-            future: false, offset: 0, size: 5,
-            duration_min: 0
-          };
-          // fetchMediathek statt fest verdrahtetem activeCorsProxy:
-          // vorher scheiterten alle Batches stumm, wenn der Proxy kippte
-          const data = await fetchMediathek(payload);
+          const d = await fetchMediathek({ queries: [], titleBatch: chunk, perTitle: 5, sortBy: 'timestamp', sortOrder: 'desc', future: false, offset: 0, size: chunk.length * 5, duration_min: 0 });
+          if (d?.result?.queryInfo?.batch) {
+            const all = d.result.results || [];
+            // Zuordnung: Index-Treffer tragen _ti, MVW-Treffer über Titelähnlichkeit (Filter unten)
+            chunk.forEach((t, i) => perTitleHits.set(t, all.filter(r => r._ti === i || r._ti === undefined)));
+            return;
+          }
+          batchSupported = false;
+        } catch { batchSupported = false; }
+      }
+      for (let i = 0; i < chunk.length; i += PERSON_BATCH_SIZE) {
+        await Promise.all(chunk.slice(i, i + PERSON_BATCH_SIZE).map(t => fetchSingle(t).catch(() => {})));
+      }
+    };
+    for (let i = 0; i < chunks.length; i += CHUNK_PARALLEL) {
+      if (seq !== undefined && seq !== searchSeq) return []; // neue Suche gestartet → abbrechen
+      const group = chunks.slice(i, i + CHUNK_PARALLEL);
+      await Promise.all(group.map(runChunk));
+      doneTitles += group.reduce((n, c) => n + c.length, 0);
+      statusEl.textContent = `${person.name}: ${Math.min(doneTitles, topTitles.length)}/${topTitles.length} Titel geprüft…`;
+    }
+    if (seq !== undefined && seq !== searchSeq) return [];
+
+    for (const title of topTitles) {
+      const batchPromises = [title].map(async (title) => {
+        try {
+          const data = { result: { results: (perTitleHits.get(title) || []).map(r => ({ ...r })) } };
           if (data?.result?.results) {
             let hits = data.result.results;
             const creditForFilter = creditMap[title];
@@ -4270,8 +4331,8 @@ async function searchPersonInMediathek(query, seq) {
         } catch {}
       });
       await Promise.all(batchPromises);
-      statusEl.textContent = `${person.name}: ${Math.min(i + PERSON_BATCH_SIZE, topTitles.length)}/${topTitles.length} Titel geprüft, ${mediathekResults.length} in Mediatheken…`;
     }
+    statusEl.textContent = `${person.name}: ${topTitles.length} Titel geprüft, ${mediathekResults.length} in Mediatheken…`;
 
     // Deduplicate (einheitlicher Key)
     const seen = new Set();
@@ -4987,7 +5048,16 @@ function openPlayer(ess) {
   video.addEventListener('ended', () => plSaveProgress(true, true));
   video.addEventListener('error', plOnVideoError);
   video.addEventListener('playing', () => plMsg(''));
-  video.addEventListener('ratechange', () => savePlayerPrefs({ rate: video.playbackRate }));
+  // Tempo: defaultPlaybackRate mitführen, sonst setzt jeder Quellenwechsel auf 1 zurück
+  const startRate = Number(prefs.rate) || 1;
+  video.defaultPlaybackRate = startRate; video.playbackRate = startRate;
+  video.addEventListener('ratechange', () => {
+    const r = video.playbackRate;
+    if (r !== video.defaultPlaybackRate) video.defaultPlaybackRate = r; // Änderung über native Steuerung
+    savePlayerPrefs({ rate: r });
+    const sel = document.getElementById('plRate');
+    if (sel && [...sel.options].some(o => Number(o.value) === r)) sel.value = String(r);
+  });
   el.querySelector('.pl-close').focus();
   recordRecent(ess);
   if (window.mmTrack) window.mmTrack('player_open', { ch: ess.channel, title: String(ess.title || '').slice(0, 60) });
@@ -5202,8 +5272,9 @@ function plApplySubPref(explicit) {
 
 function plSetRate(val) {
   const video = plVideo();
-  if (video) video.playbackRate = Number(val) || 1;
-  savePlayerPrefs({ rate: Number(val) || 1 });
+  const r = Number(val) || 1;
+  if (video) { video.defaultPlaybackRate = r; video.playbackRate = r; }
+  savePlayerPrefs({ rate: r });
 }
 
 function plRestart() {
