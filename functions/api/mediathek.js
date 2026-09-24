@@ -112,9 +112,14 @@ async function titleBatchQuery(env, p) {
       for (const w of words) b.push(`%${w}%`, `%${w}%`);
       condBinds.push(b);
     }
-    const caseSql = 'CASE ' + conds.map((c, i) => `WHEN ${c} THEN ${i}`).join(' ') + ' END';
+    // Zuordnung per CASE: der SPEZIFISCHSTE Titel zuerst (mehr Wörter, dann länger) —
+    // sonst schluckt ein kurzer Titel („Frau") Treffer eines längeren („Frau ohne Gewissen")
+    // und das 5er-Limit seiner Gruppe schneidet sie ab (Staging-Befund 24.09.).
+    const order = titles.map((t, i) => i).sort((x, y) =>
+      (titles[y].split(/\s+/).length - titles[x].split(/\s+/).length) || (titles[y].length - titles[x].length));
+    const caseSql = 'CASE ' + order.map((i) => `WHEN ${conds[i]} THEN ${i}`).join(' ') + ' END';
     const where = ['(' + conds.join(' OR ') + ')', "lower(e.channel) NOT IN ('3sat','arte.de','srf')"];
-    const binds = [...condBinds.flat(), ...condBinds.flat()];
+    const binds = [...order.flatMap((i) => condBinds[i]), ...condBinds.flat()];
     if (!p.future) { where.push('e.timestamp <= ?'); binds.push(now); }
     if (p.duration_min > 0) { where.push('e.duration >= ?'); binds.push(p.duration_min); }
     const sql = `SELECT * FROM (
