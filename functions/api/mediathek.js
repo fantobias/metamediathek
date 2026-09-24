@@ -96,7 +96,7 @@ export async function onRequestPost(context) {
 // Personensuche: bis zu 12 Titel in EINER Anfrage (statt 50 Einzelanfragen à ~4 s).
 // D1: ein einziger Scan mit OR über alle Titel, je Titel die neuesten N Treffer
 // (ROW_NUMBER). MVW: gleiche fields = OR, also eine Anfrage für alle Titel.
-async function titleBatchQuery(env, p) {
+export async function titleBatchQuery(env, p) {
   const titles = p.titleBatch.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 12);
   const per = Math.max(1, Math.min(p.perTitle || 5, 10));
   if (!titles.length) return { result: { results: [], queryInfo: { totalResults: 0, resultCount: 0, batch: true } }, _backend: 'index' };

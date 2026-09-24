@@ -13,7 +13,7 @@
 <meta property="og:url" content="https://metamediathek.pages.dev/">
 <meta name="theme-color" content="#0f1117">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
-<meta name="mm-build" content="2026-09-24.6">
+<meta name="mm-build" content="2026-09-24.7">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -307,6 +307,37 @@
   .home-grid-head {
     font-size: 17px; font-weight: 700; padding: 4px 30px 0;
   }
+  .home-grid-head .hgh-hint { font-size: 12px; font-weight: 400; color: var(--text-dim); margin-left: 8px; }
+  /* Schnellzugriff: seltener genutzte Reihen als EINE Chip-Zeile (Feedback 24.09.:
+     sieben eingeklappte Reihen schoben das gefilterte Raster nach unten) */
+  .quickbar {
+    display: flex; align-items: center; gap: 8px; overflow-x: auto;
+    padding: 2px 30px 14px 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .qb-label { font-size: 12px; color: var(--text-dim); white-space: nowrap; margin-right: 2px; }
+  .qchip {
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: 0 0 auto;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: 16px; padding: 5px 12px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .qchip:hover { border-color: var(--accent); }
+  .qchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .qchip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .qchip-n { font-size: 11px; color: var(--text-dim); }
+  .qchip.active .qchip-n { color: rgba(255,255,255,0.85); }
+  /* Empfehlungen aus Kritik & Community: kleine Kennzeichnung auf Kacheln */
+  .p-tipp, .htile-tipp {
+    position: absolute; z-index: 3; font-weight: 700; color: #1a1405; background: #f5c451;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5); white-space: nowrap;
+  }
+  .p-tipp { top: 8px; right: 8px; font-size: 10px; padding: 3px 7px; border-radius: 4px; }
+  .htile-tipp { top: 6px; right: 6px; font-size: 10px; padding: 2px 6px; border-radius: 5px; }
+  .tipp-link { color: var(--accent); text-decoration: none; }
+  .tipp-link:hover { text-decoration: underline; }
+  .hrow-hint a { color: var(--text-dim); }
+  .hrow-hint a:hover { color: var(--text); }
+  .modal-tipp { font-size: 13px; margin: 2px 0 12px; color: #f5c451; }
+  .modal-tipp a { color: #f5c451; }
   @media (max-width: 768px) {
     .home-rows { padding-left: 12px; }
     .hrow { margin-bottom: 18px; }
@@ -315,6 +346,7 @@
     .htile { width: 165px; }
     .htile-title { font-size: 12px; }
     .home-grid-head { padding: 4px 12px 0; }
+    .quickbar { padding-right: 12px; }
   }
 
   /* Ansicht-Umschalter (Kacheln/Liste) */
@@ -2744,6 +2776,7 @@ const ICONS = {
   play: '<path d="M7 4.5v15l13-7.5z" fill="currentColor" stroke="none"/>',
   tv: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="m8 2 4 5 4-5"/>',
   spy: '<circle cx="10" cy="10" r="6"/><path d="m20.5 20.5-6.2-6.2"/><path d="M7.5 10a2.5 2.5 0 0 1 2.5-2.5"/>',
+  star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9z"/>',
 };
 function ico(name, size = 16) {
   const p = ICONS[name];
@@ -3026,6 +3059,7 @@ function renderCard(item, idx, ep = false) {
   // Direktlink: HD-Datei bevorzugen — url_video ist bei MVW meist nur Mittelqualitaet
   const urlVideo = safeUrl(activeItem.url_video_hd) || safeUrl(activeItem.url_video);
   const audioVariant = item._audio || (item._audio = detectAudioVariant(item));
+  const tipp = tippFor(item);
 
   return `
     <div class="card${ep ? ' series-episode' : ''}" tabindex="0" onclick="showDetail(${idx})">
@@ -3037,6 +3071,7 @@ function renderCard(item, idx, ep = false) {
               ? renderSenderPoster(activeItem.image ? activeItem : item, urlWebsite)
               : '')}
           <span class="p-badge ${chClass}">${escHtml(item.channel)}</span>
+          ${tipp ? tippBadge(tipp, 'p-tipp') : ''}
           ${renderProgressSlot(getItemKey(item), 'p-prog')}
           ${item.duration ? `<span class="p-dur">${fmtDuration(item.duration)}</span>` : ''}
         </div>
@@ -3162,6 +3197,7 @@ function showDetail(idx) {
   const desc = (tmdb && tmdb.overview) || item.description || item._senderDesc || 'Keine Beschreibung verfügbar.';
   const mediathekDesc = item.description && tmdb?.overview && item.description !== tmdb.overview
     ? item.description : '';
+  const tipp = tippFor(item);
 
   const modalOgUrl = !(tmdb && tmdb.poster) && safeUrl(activeItem.image || item.image)
     ? safeUrl(activeItem.image || item.image)
@@ -3195,6 +3231,7 @@ function showDetail(idx) {
           ${fmtRelDate(item.timestamp) ? `<span style="color:var(--green)">${fmtRelDate(item.timestamp)}</span>` : ''}
           ${tmdb && tmdb.release_date ? `<span>🎥 Erschienen: ${tmdb.release_date}</span>` : ''}
         </div>
+        ${tipp ? `<div class="modal-tipp">${ico('star', 13)} Empfohlen von ${tipp.refs.map(r => `<a href="${escAttr(safeUrl(r.link))}" target="_blank" rel="noopener" title="Kritik lesen">${escHtml(tippSrcName(r.id))} ↗</a>`).join(' und ')}</div>` : ''}
         ${item._variants ? `
         <div class="fassungen">
           <span class="f-label">Fassung</span>
@@ -4776,6 +4813,7 @@ function playStored(key, src) {
   let w = null;
   if (src === 'progress') w = loadProgress()[key];
   if (!w && src === 'watchlist') w = loadWatchlist().find(x => x.key === key);
+  if (!w && src === 'tipp') w = tippStore.get(key);
   if (!w) w = loadRecent().find(x => x && x.key === key) || loadProgress()[key] || loadWatchlist().find(x => x.key === key);
   if (!w) return;
   openPlayer({
@@ -5383,7 +5421,7 @@ function renderHomeTile(idx) {
   const click = isSeries ? `homeSeriesClick(${idx})` : `showDetail(${idx})`;
   return `<div class="htile" tabindex="0" role="button" onclick="${click}"
       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click};}">
-    <div class="htile-media">${media}<span class="htile-ch ${chClass}">${escHtml(rep.channel)}</span>${isSeries ? `<span class="htile-count">${item.episodes.length}×</span>` : ''}</div>
+    <div class="htile-media">${media}<span class="htile-ch ${chClass}">${escHtml(rep.channel)}</span>${isSeries ? `<span class="htile-count">${item.episodes.length}×</span>` : (tippFor(rep) ? tippBadge(tippFor(rep), 'htile-tipp') : '')}</div>
     <div class="htile-title">${escHtml(title)}</div>
     <div class="htile-sub">${escHtml(bits.filter(Boolean).join(' · '))}</div>
   </div>`;
@@ -5399,7 +5437,7 @@ function homeSeriesClick(idx) {
 }
 
 // Kachel für einen gespeicherten Eintrag (Verlauf/Merkliste; Klick → Mediathek)
-function renderStoredTile(w, sub, attrs = '', src = 'recent') {
+function renderStoredTile(w, sub, attrs = '', src = 'recent', overlay = '') {
   const href = safeUrl(w.url_website) || safeUrl(w.url_video) || '';
   if (!href) return '';
   const chClass = getChannelClass(w.channel);
@@ -5410,7 +5448,7 @@ function renderStoredTile(w, sub, attrs = '', src = 'recent') {
       + (API_MODE && safeUrl(w.url_website) ? renderOgPoster(safeUrl(w.url_website)) : '');
   return `<div class="htile" role="button" tabindex="0" data-play data-skey="${escAttr(w.key)}" data-ssrc="${src}" title="In der App abspielen" ${attrs}
       onclick="playStoredEl(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();playStoredEl(this);}">
-    <div class="htile-media">${media}<span class="htile-ch ${chClass}">${escHtml(w.channel)}</span>${renderProgressBar(w.key, 'htile-prog')}</div>
+    <div class="htile-media">${media}<span class="htile-ch ${chClass}">${escHtml(w.channel)}</span>${overlay}${renderProgressBar(w.key, 'htile-prog')}</div>
     <div class="htile-title">${escHtml(w.title)}</div>
     <div class="htile-sub">${sub}</div>
   </div>`;
@@ -5507,13 +5545,116 @@ function renderHero(show) {
   el.hidden = false;
 }
 
-function homeRowHtml(id, title, hint, action, tilesHtml, count) {
+// ─── Empfehlungen aus Kritik & Community ───
+// Server /api/tipps liest filmdienst („Sehenswert in Mediatheken") und Mediathekperlen,
+// gleicht jeden Tipp mit Index + MVW ab und liefert nur Abrufbares (3 h gecacht).
+// Übernommen werden nur Titel/Jahr/Link — Texte bleiben bei den Quellen (Link „Kritik").
+const TIPP_SOURCES = { filmdienst: 'filmdienst', perlen: 'Mediathekperlen' };
+let tippData = null, tippLoading = false, TIPP_V = 0;
+const tippStore = new Map(); // getItemKey → gespeichertes Objekt fürs Abspielen
+const tippIndex = new Map(); // Titel-Schlüssel → Tipp (für die Kennzeichnung auf Kacheln)
+function tippSrcName(id) { return TIPP_SOURCES[id] || id; }
+function tkeyC(s) {
+  return String(s || '').toLowerCase().replace(/ß/g, 'ss')
+    .replace(/[„“”"«»‹›‚‘’']/g, '').replace(/[–—]/g, '-').replace(/\s+/g, ' ').trim();
+}
+function tippYearOk(t, item) {
+  if (!t.year) return true;
+  const ys = (String(item.title || '') + ' ' + String(item.description || '')).match(/\b(19[0-9]{2}|20[0-2][0-9])\b/g);
+  return !ys || ys.some(y => Math.abs(+y - t.year) <= 1);
+}
+// Gleiche Regel wie der Server: exakter Titel oder Titel + Trenner (" - Spielfilm …", " (AD)")
+function tippFor(item) {
+  if (!tippIndex.size || !item) return null;
+  if (item._tippV === TIPP_V) return item._tipp;
+  let t = null;
+  let title = String(item.title || '');
+  const srf = title.match(/^«(.+?)»/);
+  if (srf) title = srf[1];
+  const k = tkeyC(title);
+  const cands = [k];
+  const re = / - | \(| \| |: /g;
+  let m;
+  while ((m = re.exec(k))) cands.push(k.slice(0, m.index));
+  for (const c of cands) {
+    const x = tippIndex.get(c);
+    if (x && !x.serie && (item.duration || 0) >= 1500 && tippYearOk(x, item)) { t = x; break; }
+  }
+  if (!t && item.topic) { const x = tippIndex.get(tkeyC(item.topic)); if (x && x.serie) t = x; }
+  item._tipp = t; item._tippV = TIPP_V;
+  return t;
+}
+function tippBadge(t, cls) {
+  const names = t.refs.map(r => tippSrcName(r.id));
+  const label = names.length > 1 ? `${names.length} Tipps` : names[0];
+  return `<span class="${cls}" title="Empfohlen von ${escAttr(names.join(' und '))}">★ ${escHtml(label)}</span>`;
+}
+async function loadTipps() {
+  if (tippData || tippLoading || !API_MODE) return;
+  tippLoading = true;
+  try {
+    const r = await fetch('/api/tipps');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    tippData = { items: Array.isArray(d.items) ? d.items : [], sources: d.sources || [] };
+    const nowS = Date.now() / 1000;
+    for (const t of tippData.items) {
+      if (!t || !t.item || !t.title || !Array.isArray(t.refs)) continue;
+      tippIndex.set(tkeyC(t.title), t);
+      const it = t.item;
+      tippStore.set(getItemKey(it), {
+        key: getItemKey(it), title: it.title, topic: it.topic || '', channel: it.channel || '',
+        url_website: it.url_website || '', url_video: it.url_video || '', url_video_hd: it.url_video_hd || '',
+        url_subtitle: it.url_subtitle || '', id: it.id || '', available_to: it.available_to || null,
+        duration: it.duration || 0, timestamp: it.timestamp || 0, image: it.image || '',
+        poster: safeUrl(it.image) || safeUrl(t.img) || null, variant: 'standard'
+      });
+      t._expired = !!(it.available_to && it.available_to < nowS);
+    }
+    TIPP_V++;
+  } catch (e) {
+    tippData = { items: [], sources: [] }; // fail-soft: Reihe fehlt einfach
+  } finally { tippLoading = false; }
+  if (homeRowsActive) updateHomeRows(true);
+  // Kennzeichnung im Raster nachziehen (einmalig, nur wenn es Tipps gibt)
+  if (tippIndex.size && displayedResults.length) applySortAndFilter();
+}
+function renderTippsRow() {
+  if (!tippData) return '';
+  const list = tippData.items.filter(t => t && t.item && !t._expired && !isHiddenItem(t.item)).slice(0, 24);
+  if (list.length < 3) return '';
+  const tiles = list.map(t => {
+    const w = tippStore.get(getItemKey(t.item));
+    if (!w) return '';
+    const shown = { ...w, title: t.title }; // sauberer Titel der Empfehlung statt „… - Spielfilm, USA 1981"
+    const links = t.refs.map(r => `<a class="tipp-link" href="${escAttr(safeUrl(r.link))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Kritik bei ${escAttr(tippSrcName(r.id))} lesen">Kritik ↗</a>`);
+    const sub = [t.serie ? 'Serie' : '', t.year ? String(t.year) : '', t.serie ? '' : escHtml(fmtDuration(w.duration) || ''), links[0]].filter(Boolean).join(' · ');
+    return renderStoredTile(shown, sub, '', 'tipp', tippBadge(t, 'htile-tipp'));
+  }).join('');
+  const src = (tippData.sources || []).filter(x => x && x.home)
+    .map(x => `<a href="${escAttr(safeUrl(x.home))}" target="_blank" rel="noopener">${escHtml(x.name)}</a>`).join(' · ');
+  return homeRowHtml('tipps', ico('star') + ' Empfohlen von Kritik & Community',
+    (src ? src + ' — ' : '') + 'nur, was gerade abrufbar ist', '', tiles, list.length);
+}
+// Schnellzugriff: genau eine geöffnete Reihe, Zustand pro Gerät
+function loadQuickOpen() { try { return localStorage.getItem('metaMediathek_quickOpen') || ''; } catch { return ''; } }
+function toggleQuickRow(id) {
+  const next = loadQuickOpen() === id ? '' : id;
+  try { localStorage.setItem('metaMediathek_quickOpen', next); } catch (e) {}
+  updateHomeRows(true);
+  if (next) {
+    const row = document.querySelector(`.hrow[data-rowid="${id}"]`);
+    if (row && row.getBoundingClientRect().bottom > innerHeight) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function homeRowHtml(id, title, hint, action, tilesHtml, count, quick = false) {
   if (!tilesHtml) return '';
-  const collapsed = !!loadRowCollapsed()[id];
-  return `<div class="hrow ${collapsed ? 'collapsed' : ''}" data-rowid="${id}">
+  const collapsed = !quick && !!loadRowCollapsed()[id];
+  return `<div class="hrow ${collapsed ? 'collapsed' : ''}${quick ? ' hrow-quick' : ''}" data-rowid="${id}">
     <div class="hrow-head">
-      <button type="button" class="hrow-toggle" onclick="toggleHomeRow('${id}')"
-              aria-expanded="${collapsed ? 'false' : 'true'}" title="Reihe ein-/ausklappen">
+      <button type="button" class="hrow-toggle" onclick="${quick ? `toggleQuickRow('${id}')` : `toggleHomeRow('${id}')`}"
+              aria-expanded="${collapsed ? 'false' : 'true'}" title="${quick ? 'Reihe schließen' : 'Reihe ein-/ausklappen'}">
         <span class="hrow-chevron">${collapsed ? '▸' : '▾'}</span>
         <span class="hrow-title">${title} <span class="hrow-count">(${count})</span></span>
       </button>
@@ -5531,6 +5672,10 @@ function updateHomeRows(show) {
   // (Feedback #1264 — Rows überdeckten die umgeschaltete Liste)
   if (show && typeof viewMode !== 'undefined' && viewMode === 'list') show = false;
   if (activeHub) show = false; // Rubrik-Ansicht: pures Grid statt Kuration
+  // Filter/Sender-Chip aktiv → nur das Raster (Feedback 24.09.: die Filter wirken aufs
+  // Raster, das stand aber ganz unten unter den Reihen)
+  try { if (show && activeFilterCount() > 0) show = false; } catch (e) { /* FILTER_DEFAULTS noch nicht initialisiert */ }
+  if (show) loadTipps();
   renderHero(show);
   homeRowsActive = !!show;
   const wrap = document.getElementById('homeRows');
@@ -5542,6 +5687,10 @@ function updateHomeRows(show) {
     return;
   }
   const parts = [];
+
+  // Empfohlen von Kritik & Community (filmdienst, Mediathekperlen) — nur Abrufbares
+  const tipRow = renderTippsRow();
+  if (tipRow) parts.push(tipRow);
 
   // 0) Weiterschauen (angefangene Videos aus dem In-App-Player)
   const cont = continueList();
@@ -5556,32 +5705,30 @@ function updateHomeRows(show) {
       }).join(''), cont.length));
   }
 
-  // 1) Zuletzt geöffnet (local-first-Verlauf)
+  // Schnellzugriff (Feedback 24.09.): Verlauf, Merkliste und die thematischen Reihen
+  // stehen als Chips in EINER Zeile; ein Klick öffnet genau eine Reihe darunter.
+  const quick = [];
+  const addQuick = (id, icon, label, count, tilesHtml, hint = '', action = '') => {
+    if (tilesHtml && count) quick.push({ id, icon, label, count, tilesHtml, hint, action });
+  };
+
+  // Zuletzt geöffnet (local-first-Verlauf)
   const rec = loadRecent().filter(w => w && w.title);
-  if (rec.length > 0) {
-    parts.push(homeRowHtml('recent', ico('clock') + ' Zuletzt geöffnet',
-      'nur auf diesem Gerät gespeichert',
-      '<button class="hrow-action" onclick="clearRecent()">Verlauf löschen</button>',
-      rec.map(w => {
-        const opened = w.opened ? fmtRelDate(w.opened / 1000) : '';
-        const sub = [opened ? `geöffnet: ${escHtml(opened.toLowerCase())}` : '', storedExpiryWarn(w)].filter(Boolean).join(' · ');
-        return renderStoredTile(w, sub);
-      }).join(''), rec.length));
-  }
+  addQuick('recent', 'clock', 'Zuletzt geöffnet', rec.length, rec.map(w => {
+    const opened = w.opened ? fmtRelDate(w.opened / 1000) : '';
+    const sub = [opened ? `geöffnet: ${escHtml(opened.toLowerCase())}` : '', storedExpiryWarn(w)].filter(Boolean).join(' · ');
+    return renderStoredTile(w, sub);
+  }).join(''), 'nur auf diesem Gerät gespeichert',
+  '<button class="hrow-action" onclick="clearRecent()">Verlauf löschen</button>');
 
-  // 2) Merkliste — inkl. Offline-Warnung: gemerkte Filme verschwinden durch
-  // Depublizierung, genau dort ist die Warnung am wertvollsten
+  // Merkliste — inkl. Offline-Warnung (gemerkte Filme verschwinden durch Depublizierung)
   const wl = loadWatchlist().slice().sort((a, b) => (b.added || 0) - (a.added || 0)).slice(0, 15);
-  if (wl.length > 0) {
-    parts.push(homeRowHtml('watchlist', ico('bookmark') + ' Deine Merkliste', '',
-      '<button class="hrow-action" onclick="toggleWatchlistPanel()">Verwalten</button>',
-      wl.map(w => {
-        const sub = [escHtml(fmtDuration(w.duration) || ''), storedExpiryWarn(w)].filter(Boolean).join(' · ');
-        return renderStoredTile(w, sub, `data-wlkey="${escAttr(w.key)}"`, 'watchlist');
-      }).join(''), wl.length));
-  }
+  addQuick('watchlist', 'bookmark', 'Merkliste', wl.length, wl.map(w => {
+    const sub = [escHtml(fmtDuration(w.duration) || ''), storedExpiryWarn(w)].filter(Boolean).join(' · ');
+    return renderStoredTile(w, sub, `data-wlkey="${escAttr(w.key)}"`, 'watchlist');
+  }).join(''), '', '<button class="hrow-action" onclick="toggleWatchlistPanel()">Verwalten</button>');
 
-  // 3) Thematische Reihen aus den kuratierten Start-Treffern
+  // Thematische Reihen aus den kuratierten Start-Treffern
   const now = Date.now() / 1000;
   // Prädikate arbeiten auf dem Repräsentanten (bei Serien-Stapeln: rep),
   // damit Stapel in den Reihen auftauchen statt herauszufallen
@@ -5602,44 +5749,56 @@ function updateHomeRows(show) {
     }
     return out.length >= 4 ? out : [];
   };
-  const themedRow = (id, title, pred, sortFn) => {
+  const themedRow = (id, icon, label, pred, sortFn) => {
     let idxs = pickIdx(pred);
     if (sortFn && idxs.length) idxs = [...idxs].sort(sortFn);
-    return homeRowHtml(id, title, '', '', idxs.map(renderHomeTile).join(''), idxs.length);
+    addQuick(id, icon, label, idxs.length, idxs.map(renderHomeTile).join(''));
   };
   // LLM-Gattung aus dem eigenen Index (nur Index-Items; MVW-Items: '')
   const gatOf = r => repOf(r).gattung || '';
   const tsOf = r => r._series ? Math.max(...r.episodes.map(e => e.timestamp || 0)) : (r.timestamp || 0);
-  parts.push(themedRow('new', ico('sparkle') + ' Neu diese Woche', r => tsOf(r) >= now - 7 * 86400));
-  // „Bald offline": echte Depublikationsdaten kommen seit dem Hybrid-Backend
-  // aus dem eigenen Index mit (available_to); knappste zuerst
+  themedRow('new', 'sparkle', 'Neu diese Woche', r => tsOf(r) >= now - 7 * 86400);
+  // „Bald offline": echte Depublikationsdaten aus dem eigenen Index (available_to); knappste zuerst
   const availOf = r => repOf(r).available_to || 0;
-  parts.push(themedRow('expiring', ico('timer') + ' Bald offline', r => {
+  themedRow('expiring', 'timer', 'Bald offline', r => {
     const a = availOf(r);
     return a > now && a - now <= 7 * 86400;
-  }, (a, b) => availOf(displayedResults[a]) - availOf(displayedResults[b])));
+  }, (a, b) => availOf(displayedResults[a]) - availOf(displayedResults[b]));
   // Spielfilme (Feedback #1261: Magazinformate wie "Wie geht das?" rutschten
   // über den Laufzeit-Fallback hinein): Fragezeichen-Topics und Magazin-Sendungen
   // raus; der Fallback greift nur noch ohne jedes Faktual-Genre-Signal
   const magazineLike = r => /\?\s*$/.test((r.topic || '').trim()) || isNewsMagazineTopic(r.topic);
   const FACTUAL = ['Dokumentation', 'Dokumentarfilm', 'Natur', 'Wissenschaft', 'Geschichte', 'Politik', 'Kultur', 'Sport', 'Musik'];
   // Gattung (LLM) schlägt die Wort-Heuristik; ohne Gattung gilt sie weiter.
-  // Der Laufzeit-Fallback greift nicht mehr, wenn die Gattung faktual ist.
   const FACTUAL_GAT = ['Nachrichten', 'Magazin', 'Doku', 'Reportage', 'Wissen', 'Show', 'Sport', 'Musik', 'Kinder'];
-  parts.push(themedRow('movies', ico('film') + ' Spielfilme', r => !r._series && !magazineLike(r)
+  themedRow('movies', 'film', 'Spielfilme', r => !r._series && !magazineLike(r)
     && (gatOf(r) === 'Film'
       || (gatOf(r) !== '' && FACTUAL_GAT.includes(gatOf(r)) ? false
         : (gOf(r).includes('Spielfilm')
-          || ((r.duration || 0) >= 4800 && !FACTUAL.some(g => gOf(r).includes(g))))))));
-  parts.push(themedRow('docs', ico('globe') + ' Dokus & Reportagen', r => gatOf(r) === 'Doku' || gatOf(r) === 'Reportage'
-    || gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm')));
-  parts.push(themedRow('crime', ico('spy') + ' Krimis & Thriller', r => gatOf(r) === 'Krimi'
-    || gOf(r).includes('Krimi') || gOf(r).includes('Thriller')));
+          || ((r.duration || 0) >= 4800 && !FACTUAL.some(g => gOf(r).includes(g)))))));
+  themedRow('docs', 'globe', 'Dokus & Reportagen', r => gatOf(r) === 'Doku' || gatOf(r) === 'Reportage'
+    || gOf(r).includes('Dokumentation') || gOf(r).includes('Dokumentarfilm'));
+  themedRow('crime', 'spy', 'Krimis & Thriller', r => gatOf(r) === 'Krimi'
+    || gOf(r).includes('Krimi') || gOf(r).includes('Thriller'));
+
+  if (quick.length) {
+    const openId = loadQuickOpen();
+    const open = quick.find(q => q.id === openId);
+    parts.push(`<div class="quickbar" role="toolbar" aria-label="Schnellzugriff"><span class="qb-label">Schnellzugriff</span>${
+      quick.map(q => `<button type="button" class="qchip${open && open.id === q.id ? ' active' : ''}" data-quick="${q.id}"
+        aria-expanded="${open && open.id === q.id ? 'true' : 'false'}" onclick="toggleQuickRow('${q.id}')">${ico(q.icon, 14)} ${q.label} <span class="qchip-n">${q.count}</span></button>`).join('')
+    }</div>`);
+    if (open) parts.push(homeRowHtml(open.id, ico(open.icon) + ' ' + open.label, open.hint, open.action, open.tilesHtml, open.count, true));
+  }
 
   const html = parts.filter(Boolean).join('');
   wrap.innerHTML = html;
   wrap.hidden = !html;
-  if (head) head.hidden = !html;
+  if (head) {
+    head.hidden = !html;
+    head.innerHTML = `Alle aktuellen Sendungen <span class="hrow-count">(${displayedResults.length})</span>`
+      + '<span class="hgh-hint">Filter und Sender-Chips wirken hier</span>';
+  }
   // Transparenz: zeigen, wie viele Sendungen bewusst ausgeblendet sind
   const hi = document.getElementById('hiddenInfo');
   if (hi) {
