@@ -13,7 +13,7 @@
 <meta property="og:url" content="https://metamediathek.pages.dev/">
 <meta name="theme-color" content="#0f1117">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
-<meta name="mm-build" content="2026-09-24.7">
+<meta name="mm-build" content="2026-09-25.1">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -54,7 +54,7 @@
   }
   .header-top .search-bar { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
   .subheader { padding: 12px 30px 0; }
-  .results-meta { margin-top: 10px; }
+  .results-meta { margin-top: 8px; }
   .filter-toggle-btn .ft-badge {
     display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px;
     background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
@@ -146,6 +146,48 @@
   .filters.open { display: flex; }
   .filter-toggle-btn { display: inline-flex; align-items: center; font-size: 13px; padding: 8px 14px; }
   .subheader-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  /* Bedienleiste: eine Zeile statt fünf (Feedback 24.09.) */
+  .ctrlbar { flex-wrap: nowrap; gap: 8px; }
+  .ctrlbar .hubs { padding: 0; flex: 0 1 auto; min-width: 0; gap: 4px; }
+  .ctrlbar .hub { padding: 6px 11px; font-size: 13px; border-color: transparent; background: none; }
+  .ctrlbar .hub:hover { border-color: var(--border); }
+  .ctrlbar .hub.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cb-sep { width: 1px; height: 22px; background: var(--border); flex: 0 0 auto; }
+  .dd { position: relative; flex: 0 0 auto; }
+  .dd-btn, .ctrlbar .filter-toggle-btn {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 6px 11px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .dd-btn:hover, .ctrlbar .filter-toggle-btn:hover { border-color: var(--accent); }
+  .dd-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dd.has-val .dd-btn { border-color: var(--accent); color: var(--accent); }
+  .dd-val { font-weight: 600; }
+  .dd-val:not(:empty)::before { content: ': '; font-weight: 400; color: var(--text-dim); }
+  .dd-car { font-size: 10px; color: var(--text-dim); }
+  .dd-panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+    width: 340px; max-width: calc(100vw - 24px); padding: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  }
+  .dd.open .dd-panel { display: block; }
+  .dd-panel .chips { flex-wrap: wrap; overflow: visible; margin-top: 0; padding-bottom: 0; }
+  .ctrlbar .view-toggle { flex: 0 0 auto; }
+  .ctrlbar .vt-btn { padding: 6px 9px; }
+  .ctrlbar .vt-btn .vt-txt { display: none; }
+  .cb-stats { margin-left: auto; gap: 12px; font-size: 12px; white-space: nowrap; flex: 0 0 auto; }
+  .active-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .active-pills[hidden] { display: none; }
+  .apill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    padding: 3px 10px; border-radius: 14px; background: rgba(79,140,255,0.15);
+    border: 1px solid rgba(79,140,255,0.5); color: var(--text); cursor: pointer; font-family: inherit;
+  }
+  .apill:hover { border-color: var(--accent); }
+  .apill .x { color: var(--text-dim); font-weight: 400; }
+  .filtered-info { font-size: 12px; color: var(--text-dim); }
+  .filtered-info:empty { display: none; }
 
   /* Sender-Chips: der Aggregator-Kernfilter sichtbar statt im Dropdown versteckt */
   .sender-chips { margin-top: 10px; }
@@ -802,6 +844,12 @@
     .header-right { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
     .subheader { padding: 10px 16px 0; }
     .stats { flex-wrap: wrap; gap: 8px 14px; }
+    .ctrlbar { flex-wrap: wrap; row-gap: 8px; }
+    .ctrlbar .hubs { flex: 1 1 100%; }
+    .ctrlbar .cb-sep { display: none; }
+    .ctrlbar .filter-toggle-btn { width: auto; min-height: 40px; margin-bottom: 0; }
+    .dd-btn { min-height: 40px; }
+    .cb-stats { flex: 1 1 100%; margin-left: 0; }
     .watchlist-toggle, .profile-toggle { min-height: 44px; }
     .search-bar { flex-wrap: wrap; }
     .search-input { flex: 1 1 100%; font-size: 16px; min-height: 44px; } /* 16px verhindert iOS-Auto-Zoom */
@@ -979,16 +1027,57 @@
     </div>
   </div>
 
-  <div class="subheader-controls">
+  <!-- Bedienleiste (Feedback 24.09.: Rubriken-, Sender- und Genre-Schaltflächen nahmen
+       ~280 px) — alles in EINER Zeile; Sender und Genre als Aufklapp-Menüs -->
+  <div class="subheader-controls ctrlbar">
+    <div class="hubs" id="hubBar" role="tablist" aria-label="Rubriken">
+    <button type="button" class="hub active" data-hub="" onclick="setHub('')">Start</button>
+    <button type="button" class="hub" data-hub="Film" onclick="setHub('Film')">Filme</button>
+    <button type="button" class="hub" data-hub="Serie" onclick="setHub('Serie')">Serien</button>
+    <button type="button" class="hub" data-hub="Doku,Reportage" onclick="setHub('Doku,Reportage')">Dokus</button>
+    <button type="button" class="hub" data-hub="Krimi" onclick="setHub('Krimi')">Krimis</button>
+    <button type="button" class="hub" data-hub="Wissen" onclick="setHub('Wissen')">Wissen</button>
+    <button type="button" class="hub" data-hub="Show" onclick="setHub('Show')">Shows</button>
+    <button type="button" class="hub" data-hub="Kinder" onclick="setHub('Kinder')">Kinder</button>
+  </div>
+    <span class="cb-sep" aria-hidden="true"></span>
+    <div class="dd" id="ddSender">
+      <button type="button" class="dd-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleDD('ddSender', event)">
+        <span class="dd-label">Sender</span><span class="dd-val"></span><span class="dd-car">▾</span></button>
+      <div class="dd-panel" role="menu" aria-label="Sender wählen">
+        <div class="chips sender-chips" id="senderChips"></div>
+      </div>
+    </div>
+    <div class="dd" id="ddGenre">
+      <button type="button" class="dd-btn" aria-haspopup="true" aria-expanded="false" onclick="toggleDD('ddGenre', event)">
+        <span class="dd-label">Genre</span><span class="dd-val"></span><span class="dd-car">▾</span></button>
+      <div class="dd-panel" role="menu" aria-label="Genre oder Reihe wählen">
+        <div class="chips" id="quickChips">
+    <span class="chip" data-term="Tatort" onclick="quickSearch('Tatort')">Tatort</span>
+    <span class="chip" data-term="Polizeiruf" onclick="quickSearch('Polizeiruf')">Polizeiruf 110</span>
+    <span class="chip" data-term="Thriller" onclick="quickSearch('Thriller')">Thriller</span>
+    <span class="chip" data-term="Drama" onclick="quickSearch('Drama')">Drama</span>
+    <span class="chip" data-term="Komödie" onclick="quickSearch('Komödie')">Komödien</span>
+    <span class="chip" data-term="Natur" onclick="quickSearch('Natur')">Natur</span>
+    <span class="chip" data-term="Geschichte" onclick="quickSearch('Geschichte')">Geschichte</span>
+    <span class="chip" data-term="Science Fiction" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
+    <span class="chip" data-term="Liebe" onclick="quickSearch('Liebe')">Liebesfilme</span>
+        </div>
+      </div>
+    </div>
     <button type="button" class="btn btn-secondary filter-toggle-btn" id="filterToggleBtn"
-            onclick="toggleFilters()">Filter &amp; Sortierung ▼</button>
-    <!-- Ansicht-Umschalter sichtbar außerhalb des Filterpanels (Feedback #1264:
-         im eingeklappten Panel war er nicht mehr auffindbar) -->
+            onclick="toggleFilters()">Filter ▾</button>
     <div class="view-toggle" role="group" aria-label="Darstellung">
-      <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> Kacheln</button>
-      <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg> Liste</button>
+      <button type="button" id="viewBtnCards" class="vt-btn active" onclick="setViewMode('cards')" title="Kachel-Ansicht"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="vt-txt"> Kacheln</span></button>
+      <button type="button" id="viewBtnList" class="vt-btn" onclick="setViewMode('list')" title="Kompakte Listen-Ansicht"><svg class="ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span class="vt-txt"> Liste</span></button>
+    </div>
+    <div class="stats cb-stats">
+      <div><strong id="resultCountTotal">0</strong> Treffer</div>
+      <div><strong id="senderCount">0</strong> Sender</div>
+      <div id="tmdbStatus" style="color:var(--green)"></div>
     </div>
   </div>
+  <div class="active-pills" id="activePills" hidden></div>
   <div class="filters">
     <div class="filter-group">
       <span class="filter-label">Sender</span>
@@ -1105,48 +1194,8 @@
     </div>
   </div>
 
-  <div class="hubs" id="hubBar" role="tablist" aria-label="Rubriken">
-    <button type="button" class="hub active" data-hub="" onclick="setHub('')">Start</button>
-    <button type="button" class="hub" data-hub="Film" onclick="setHub('Film')">Filme</button>
-    <button type="button" class="hub" data-hub="Serie" onclick="setHub('Serie')">Serien</button>
-    <button type="button" class="hub" data-hub="Doku,Reportage" onclick="setHub('Doku,Reportage')">Dokus</button>
-    <button type="button" class="hub" data-hub="Krimi" onclick="setHub('Krimi')">Krimis</button>
-    <button type="button" class="hub" data-hub="Wissen" onclick="setHub('Wissen')">Wissen</button>
-    <button type="button" class="hub" data-hub="Show" onclick="setHub('Show')">Shows</button>
-    <button type="button" class="hub" data-hub="Kinder" onclick="setHub('Kinder')">Kinder</button>
-  </div>
-
-  <div class="chips sender-chips" id="senderChips">
-    <span class="schip active" data-ch="">Alle Sender</span>
-    <span class="schip" data-ch="ARD">ARD</span>
-    <span class="schip" data-ch="ZDF">ZDF</span>
-    <span class="schip" data-ch="ARTE.DE">arte</span>
-    <span class="schip" data-ch="3Sat">3sat</span>
-    <span class="schip" data-ch="ORF">ORF</span>
-    <span class="schip" data-ch="SRF">SRF</span>
-    <span class="schip" data-ch="PHOENIX">Phoenix</span>
-    <span class="schip" data-ch="KiKA">KiKA</span>
-  </div>
-
-  <div class="chips" id="quickChips">
-    <span class="chip" data-term="Tatort" onclick="quickSearch('Tatort')">Tatort</span>
-    <span class="chip" data-term="Polizeiruf" onclick="quickSearch('Polizeiruf')">Polizeiruf 110</span>
-    <span class="chip" data-term="Thriller" onclick="quickSearch('Thriller')">Thriller</span>
-    <span class="chip" data-term="Drama" onclick="quickSearch('Drama')">Drama</span>
-    <span class="chip" data-term="Komödie" onclick="quickSearch('Komödie')">Komödien</span>
-    <span class="chip" data-term="Natur" onclick="quickSearch('Natur')">Natur</span>
-    <span class="chip" data-term="Geschichte" onclick="quickSearch('Geschichte')">Geschichte</span>
-    <span class="chip" data-term="Science Fiction" onclick="quickSearch('Science Fiction')">Sci-Fi</span>
-    <span class="chip" data-term="Liebe" onclick="quickSearch('Liebe')">Liebesfilme</span>
-  </div>
-
   <div class="results-meta">
-    <div class="stats">
-      <div><strong id="resultCountTotal">0</strong> Ergebnisse gesamt</div>
-      <div id="filteredInfo"></div>
-      <div><strong id="senderCount">0</strong> Sender</div>
-      <div id="tmdbStatus" style="color:var(--green)"></div>
-    </div>
+    <div id="filteredInfo" class="filtered-info"></div>
     <div id="hiddenInfo" class="hidden-info" hidden></div>
   </div>
 </div>
@@ -3449,7 +3498,7 @@ function applySortAndFilter() {
     filteredInfo.innerHTML = `Ähnlich wie: <strong>${escHtml(similarRef.label)}</strong> — ${filtered.length} von ${similarRef.checked} TMDB-Empfehlungen aktuell in den Mediatheken. Falls der falsche Referenzfilm erkannt wurde: Jahr oder Originaltitel mit angeben.`;
   } else if (curationApplied) {
     // Kuration ist kein Nutzer-Filter — nicht als "(Filter aktiv)" ausweisen
-    filteredInfo.innerHTML = `Startseite: <strong>${filtered.length}</strong> aktuelle Sendungen quer durch die Sender (ohne Kurzclips &amp; Nachrichten). Suche zeigt immer alles.`;
+    filteredInfo.innerHTML = '';
   } else if (filtered.length !== enrichedResults.length) {
     // Klar benennen, WORAUF sich die Zahl bezieht — der Widerspruch
     // "1.708 Treffer, 0 Karten" war der häufigste Verwirrungs-Befund im Nutzertest
@@ -3735,6 +3784,13 @@ async function doSearch(resetOffset = true, keepChips = false) {
     if (!(activeQuickFilter && curQ === activeQuickFilter)) activeQuickFilter = '';
   }
   updateChipHighlight();
+  // Zurück zur Startansicht: die von einer Suche automatisch gelockerte Aktualität
+  // („Beliebig") wieder auf den Standard setzen — sonst zählte sie als aktiver
+  // Filter und die Startseiten-Reihen blieben verschwunden (Befund 25.09.)
+  if (!ageTouched && !document.getElementById('searchInput').value.trim()) {
+    const ageEl = document.getElementById('filterAge');
+    if (ageEl.value === '0') ageEl.value = '365';
+  }
 
   // Race-Schutz: jede Suche bekommt eine Generation. Antworten älterer
   // Suchen (langsamer Proxy) dürfen den aktuellen Zustand nicht überschreiben.
@@ -3871,6 +3927,7 @@ const GENRE_CHIP_TERMS = ['Thriller', 'Drama', 'Komödie', 'Liebe', 'Science Fic
 function updateChipHighlight() {
   document.querySelectorAll('#quickChips .chip').forEach(c =>
     c.classList.toggle('active', !!activeQuickFilter && c.dataset.term === activeQuickFilter));
+  if (typeof updateCtrlLabels === 'function') updateCtrlLabels();
 }
 
 // Aktualitäts-Filter: Default "Letztes Jahr" ist gut für die Startseite,
@@ -5830,8 +5887,9 @@ function updateFilterBadge() {
   if (!btn) return;
   const open = document.querySelector('.filters').classList.contains('open');
   const n = activeFilterCount();
-  btn.innerHTML = (open ? 'Filter ausblenden ▲' : 'Filter &amp; Sortierung ▼')
+  btn.innerHTML = ico('filter', 14) + ' Filter ' + (open ? '▴' : '▾')
     + (n > 0 ? ` <span class="ft-badge">${n}</span>` : '');
+  btn.title = open ? 'Filter & Sortierung ausblenden' : 'Filter & Sortierung (Dauer, Fassung, Bewertung, Aktualität …)';
   if (typeof updateSenderChips === 'function') updateSenderChips();
 }
 function toggleFilters() {
@@ -5912,19 +5970,82 @@ function toggleHideItem(idx) {
 }
 function clearHidden() { saveHidden({}); applySortAndFilter(); }
 
-// ─── Sender-Chips: sichtbarer Kernfilter, gekoppelt an das Dropdown ───
+// ─── Sender-Menü: Chips im Aufklapp-Menü, gekoppelt an das Sender-Dropdown ───
+const SENDER_LABELS = { 'ARTE.DE': 'arte', '3Sat': '3sat' };
+(function buildSenderChips() {
+  const box = document.getElementById('senderChips');
+  box.innerHTML = [...document.getElementById('filterChannel').options].map(o =>
+    `<span class="schip" role="menuitemradio" tabindex="0" data-ch="${escAttr(o.value)}">${escHtml(o.value ? (SENDER_LABELS[o.value] || o.textContent) : 'Alle Sender')}</span>`).join('');
+})();
+function senderLabel(v) {
+  const o = [...document.getElementById('filterChannel').options].find(x => x.value === v);
+  return v ? (SENDER_LABELS[v] || (o ? o.textContent : v)) : '';
+}
 function updateSenderChips() {
   const val = document.getElementById('filterChannel').value;
   document.querySelectorAll('#senderChips .schip').forEach(c =>
     c.classList.toggle('active', (c.dataset.ch || '') === val));
+  updateCtrlLabels();
+}
+function pickSender(ch) {
+  document.getElementById('filterChannel').value = ch || '';
+  closeDD();
+  updateSenderChips();
+  onServerFilterChange();
 }
 document.getElementById('senderChips').addEventListener('click', e => {
   const c = e.target.closest('.schip');
-  if (!c) return;
-  document.getElementById('filterChannel').value = c.dataset.ch || '';
-  updateSenderChips();
-  onServerFilterChange();
+  if (c) pickSender(c.dataset.ch || '');
 });
+document.getElementById('senderChips').addEventListener('keydown', e => {
+  const c = e.target.closest('.schip');
+  if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickSender(c.dataset.ch || ''); }
+});
+// Genre-Menü schließt nach der Auswahl
+document.getElementById('quickChips').addEventListener('click', () => closeDD());
+
+// Aufklapp-Menüs: eins zur Zeit, Klick daneben oder Esc schließt
+function closeDD() {
+  document.querySelectorAll('.dd.open').forEach(d => {
+    d.classList.remove('open');
+    const b = d.querySelector('.dd-btn'); if (b) b.setAttribute('aria-expanded', 'false');
+  });
+}
+function toggleDD(id, ev) {
+  if (ev) ev.stopPropagation();
+  const d = document.getElementById(id);
+  const wasOpen = d.classList.contains('open');
+  closeDD();
+  if (wasOpen) return;
+  d.classList.add('open');
+  d.querySelector('.dd-btn').setAttribute('aria-expanded', 'true');
+  // Panel im Fenster halten (schmale Bildschirme)
+  const p = d.querySelector('.dd-panel');
+  p.style.left = '0px';
+  const r = p.getBoundingClientRect();
+  if (r.right > innerWidth - 12) p.style.left = Math.round(innerWidth - 12 - r.right) + 'px';
+}
+// Capture-Phase: Kachel-Aktionen stoppen die Weitergabe (stopPropagation) — sonst bliebe das Menü offen
+document.addEventListener('click', e => { if (!e.target.closest('.dd')) closeDD(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDD(); });
+
+// Knopf-Beschriftung („Sender: arte") + entfernbare Pillen für aktive Auswahl
+function updateCtrlLabels() {
+  const ch = document.getElementById('filterChannel').value;
+  const ds = document.getElementById('ddSender'), dg = document.getElementById('ddGenre');
+  if (!ds || !dg) return;
+  ds.querySelector('.dd-val').textContent = senderLabel(ch);
+  ds.classList.toggle('has-val', !!ch);
+  const gChip = activeQuickFilter ? [...document.querySelectorAll('#quickChips .chip')].find(c => c.dataset.term === activeQuickFilter) : null;
+  dg.querySelector('.dd-val').textContent = gChip ? gChip.textContent : '';
+  dg.classList.toggle('has-val', !!gChip);
+  const pills = [];
+  if (ch) pills.push(`<button type="button" class="apill" onclick="pickSender('')" title="Sender-Filter entfernen">${escHtml(senderLabel(ch))} <span class="x">✕</span></button>`);
+  if (gChip) pills.push(`<button type="button" class="apill" onclick="quickSearch(${escAttr(JSON.stringify(activeQuickFilter))})" title="Genre-Auswahl entfernen">${escHtml(gChip.textContent)} <span class="x">✕</span></button>`);
+  const box = document.getElementById('activePills');
+  box.innerHTML = pills.join('');
+  box.hidden = !pills.length;
+}
 
 // ─── Mobile Bottom-Tab-Bar ───
 function tabbarGo(what) {
