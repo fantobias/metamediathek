@@ -127,13 +127,18 @@ async function titleBatchQuery(env, p) {
     const r = await env.INDEX_DB.prepare(sql).bind(...binds, per).all();
     return (r.results || []).map((row) => ({ ...mapRow(row), _ti: row._ti }));
   };
+  // MVW je Titel einzeln, aber parallel vom Server aus: eine gemeinsame OR-Anfrage
+  // würde von häufigen Titeln („Sabrina", „Eins, zwei, drei") dominiert und seltene
+  // Treffer verdrängen (Staging-Befund 24.09.). MVW ist schnell (~0,5 s) — der
+  // Engpass war der D1-Index, und der läuft oben in EINER Abfrage.
   const mvwPart = async () => {
-    const r = await mvwFetch({
-      queries: [...titles.map((t) => ({ fields: ['title', 'topic'], query: t })), ...MVW_ONLY.map((c) => ({ fields: ['channel'], query: c }))],
-      sortBy: 'timestamp', sortOrder: 'desc', future: !!p.future, offset: 0, size: Math.min(titles.length * per * 2, 200),
+    const res = await Promise.allSettled(titles.map((t) => mvwFetch({
+      queries: [{ fields: ['title', 'topic'], query: t }, ...MVW_ONLY.map((c) => ({ fields: ['channel'], query: c }))],
+      sortBy: 'timestamp', sortOrder: 'desc', future: !!p.future, offset: 0, size: per,
       duration_min: p.duration_min || 0,
-    });
-    return r?.result?.results || [];
+    })));
+    if (res.every((x) => x.status !== 'fulfilled')) throw new Error('MVW-Batch fehlgeschlagen');
+    return res.flatMap((x, i) => (x.status === 'fulfilled' ? (x.value?.result?.results || []).map((r) => ({ ...r, _ti: i })) : []));
   };
   const [a, b] = await Promise.allSettled([d1Part(), mvwPart()]);
   const items = [...(a.status === 'fulfilled' ? a.value : []), ...(b.status === 'fulfilled' ? b.value : [])];
