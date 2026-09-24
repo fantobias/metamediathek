@@ -13,7 +13,7 @@
 <meta property="og:url" content="https://metamediathek.pages.dev/">
 <meta name="theme-color" content="#0f1117">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
-<meta name="mm-build" content="2026-09-24.5">
+<meta name="mm-build" content="2026-09-24.6">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -4248,8 +4248,11 @@ async function searchPersonInMediathek(query, seq) {
           const d = await fetchMediathek({ queries: [], titleBatch: chunk, perTitle: 5, sortBy: 'timestamp', sortOrder: 'desc', future: false, offset: 0, size: chunk.length * 5, duration_min: 0 });
           if (d?.result?.queryInfo?.batch) {
             const all = d.result.results || [];
-            // Zuordnung: Index-Treffer tragen _ti, MVW-Treffer über Titelähnlichkeit (Filter unten)
-            chunk.forEach((t, i) => perTitleHits.set(t, all.filter(r => r._ti === i || r._ti === undefined)));
+            // Jeden Treffer ALLEN Titeln des Pakets anbieten: der Server ordnet per _ti nur dem
+            // ersten passenden Titel zu (z. B. „Die Frau ohne Gewissen" landete bei einem
+            // kürzeren Titel und fiel dann durch). Die Titelähnlichkeits-Filter unten
+            // entscheiden die Zuordnung; doppelte Treffer entfernt die Deduplizierung.
+            chunk.forEach((t) => perTitleHits.set(t, all));
             return;
           }
           batchSupported = false;
