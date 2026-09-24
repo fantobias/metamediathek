@@ -5607,7 +5607,7 @@ async function loadTipps() {
         url_website: it.url_website || '', url_video: it.url_video || '', url_video_hd: it.url_video_hd || '',
         url_subtitle: it.url_subtitle || '', id: it.id || '', available_to: it.available_to || null,
         duration: it.duration || 0, timestamp: it.timestamp || 0, image: it.image || '',
-        poster: safeUrl(it.image) || null, variant: 'standard'
+        poster: safeUrl(it.image) || safeUrl(t.img) || null, variant: 'standard'
       });
       t._expired = !!(it.available_to && it.available_to < nowS);
     }
@@ -5626,9 +5626,9 @@ function renderTippsRow() {
   const tiles = list.map(t => {
     const w = tippStore.get(getItemKey(t.item));
     if (!w) return '';
-    const shown = { ...w, title: t.serie ? t.title : (t.item.title.startsWith('«') ? t.title : stripVariantSuffix(t.item.title)) };
+    const shown = { ...w, title: t.title }; // sauberer Titel der Empfehlung statt „… - Spielfilm, USA 1981"
     const links = t.refs.map(r => `<a class="tipp-link" href="${escAttr(safeUrl(r.link))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Kritik bei ${escAttr(tippSrcName(r.id))} lesen">Kritik ↗</a>`);
-    const sub = [t.serie ? 'Serie' : escHtml(fmtDuration(w.duration) || ''), links[0]].filter(Boolean).join(' · ');
+    const sub = [t.serie ? 'Serie' : '', t.year ? String(t.year) : '', t.serie ? '' : escHtml(fmtDuration(w.duration) || ''), links[0]].filter(Boolean).join(' · ');
     return renderStoredTile(shown, sub, '', 'tipp', tippBadge(t, 'htile-tipp'));
   }).join('');
   const src = (tippData.sources || []).filter(x => x && x.home)
