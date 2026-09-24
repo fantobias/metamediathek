@@ -40,7 +40,7 @@ function hostOk(h, list) { return list.some((a) => h === a || h.endsWith('.' + a
 
 async function getJson(url, init = {}, ttl = 300) {
   const r = await fetch(url, { ...init, headers: { 'User-Agent': UA, Accept: 'application/json', ...(init.headers || {}) }, cf: { cacheTtl: ttl, cacheEverything: true } });
-  if (!r.ok) throw new Error(`HTTP ${r.status} ${new URL(url).hostname}`);
+  if (!r.ok) { const e = new Error(`HTTP ${r.status} ${new URL(url).hostname}`); e.status = r.status; throw e; }
   return r.json();
 }
 
@@ -260,7 +260,20 @@ export async function onRequestPost(context) {
   try {
     if (/(^|\.)ardmediathek\.de$/.test(host)) {
       const m = url.pathname.match(/\/video\/(?:[^/]+\/)*([A-Za-z0-9_-]{20,})\/?$/);
-      if (m) { tried = 'ard'; resolved = await resolveArd(m[1]); }
+      if (m) {
+        tried = 'ard';
+        try { resolved = await resolveArd(m[1]); }
+        catch (e) {
+          if (e.status !== 404) throw e;
+          // Beitrag existiert bei der ARD nicht mehr (depubliziert/zurückgezogen, Feedback
+          // 24.09. „läuft weder über Abspielen noch über Sender"). Ehrliche Meldung und den
+          // toten Eintrag aus dem eigenen Index entfernen — der tägliche Depub-Sweep kommt
+          // sonst erst Stunden später; taucht der Beitrag wieder auf, crawlt ihn der Crawler neu.
+          resolved = { ok: false, blocked: 'gone', message: 'Dieser Beitrag ist in der ARD-Mediathek nicht mehr verfügbar.' };
+          const db = context.env && context.env.INDEX_DB;
+          if (db) { try { context.waitUntil(db.prepare('DELETE FROM entries WHERE id = ?').bind(m[1]).run().catch(() => {})); } catch (e2) {} }
+        }
+      }
     } else if (/(^|\.)zdf\.de$/.test(host)) {
       const seg = url.pathname.replace(/\.html$/, '').split('/').filter(Boolean).pop();
       const canonical = /^[a-z0-9-]+$/.test(String(body.id || '')) ? body.id : seg;

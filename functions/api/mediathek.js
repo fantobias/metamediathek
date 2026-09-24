@@ -33,22 +33,127 @@ const INDEX_CHANNELS = {
   'Radio Bremen TV': { exact: ['radio bremen'], prefix: [] },
 };
 
+// Edge-Cache: identische Anfragen (gleicher Body) 5 Minuten aus dem Cloudflare-Cache.
+// Nutzer-Feedback 24.09.: „die gleiche Suche dauert beim zweiten Mal genauso lang".
+const EDGE_TTL = 300;
+
 export async function onRequestPost(context) {
   const bodyText = await context.request.text();
   if (bodyText.length > 10000) return new Response('Payload zu gross', { status: 413 });
 
+  let cacheKey = null;
+  try {
+    const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bodyText));
+    const hex = [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    cacheKey = new Request('https://mm-cache.local/mediathek/v2/' + hex);
+    const hit = await caches.default.match(cacheKey);
+    if (hit) {
+      return new Response(hit.body, { status: 200, headers: {
+        'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store',
+        'x-mm-backend': hit.headers.get('x-mm-backend') || '', 'x-mm-cache': 'hit',
+      } });
+    }
+  } catch (e) { cacheKey = null; }
+
   let payload = null;
   try { payload = JSON.parse(bodyText); } catch { /* kein JSON -> MVW entscheiden lassen */ }
 
+  let text = null, backend = 'mvw';
   if (payload && context.env.INDEX_DB) {
     try {
-      const hybrid = await hybridQuery(context.env, payload);
-      if (hybrid) return jsonResp(hybrid, hybrid._backend);
+      const hybrid = Array.isArray(payload.titleBatch)
+        ? await titleBatchQuery(context.env, payload)
+        : await hybridQuery(context.env, payload);
+      if (hybrid) { const { _backend, ...clean } = hybrid; text = JSON.stringify(clean); backend = _backend || 'index'; }
     } catch (err) {
       // bewusst still: jeder Index-Fehler fällt auf den bewährten MVW-Weg zurück
     }
   }
-  return mvwProxy(bodyText);
+  if (text === null) {
+    if (payload && Array.isArray(payload.titleBatch)) {
+      // Batch ohne Index: nur MVW-Teil, gleiche Antwortform
+      try { const r = await titleBatchQuery(null, payload); const { _backend, ...clean } = r; text = JSON.stringify(clean); backend = 'mvw'; }
+      catch (e) { return new Response(JSON.stringify({ result: { results: [], queryInfo: { totalResults: 0, resultCount: 0, batch: true } } }), { status: 200, headers: { 'Content-Type': 'application/json' } }); }
+    } else {
+      const upstream = await fetch(MVW_API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: bodyText });
+      if (!upstream.ok) return new Response(upstream.body, { status: upstream.status, headers: { 'Content-Type': 'application/json', 'x-mm-backend': 'mvw' } });
+      text = await upstream.text();
+    }
+  }
+  if (cacheKey) {
+    try {
+      context.waitUntil(caches.default.put(cacheKey, new Response(text, { headers: {
+        'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=' + EDGE_TTL, 'x-mm-backend': backend,
+      } })));
+    } catch (e) {}
+  }
+  return new Response(text, { status: 200, headers: {
+    'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store',
+    'x-mm-backend': backend, 'x-mm-cache': 'miss',
+  } });
+}
+
+// Personensuche: bis zu 12 Titel in EINER Anfrage (statt 50 Einzelanfragen à ~4 s).
+// D1: ein einziger Scan mit OR über alle Titel, je Titel die neuesten N Treffer
+// (ROW_NUMBER). MVW: gleiche fields = OR, also eine Anfrage für alle Titel.
+async function titleBatchQuery(env, p) {
+  const titles = p.titleBatch.map((t) => String(t || '').trim()).filter(Boolean).slice(0, 12);
+  const per = Math.max(1, Math.min(p.perTitle || 5, 10));
+  if (!titles.length) return { result: { results: [], queryInfo: { totalResults: 0, resultCount: 0, batch: true } }, _backend: 'index' };
+  const now = Math.floor(Date.now() / 1000) + 3600;
+
+  const d1Part = async () => {
+    if (!env || !env.INDEX_DB) return [];
+    // Suchwörter als SQL-Literale statt gebundener Parameter: D1 erlaubt höchstens 100
+    // Parameter pro Abfrage — 10 Titel × Wörter × 2 Felder × (CASE + WHERE) sprengten
+    // das, die Abfrage schlug fehl und der Index-Teil fehlte still (Staging-Befund 24.09.).
+    // Sicher, weil SQLite in String-Literalen nur ' maskiert ('' ) — keine Backslash-Escapes.
+    const lit = (w) => "'%" + String(w).replace(/'/g, "''") + "%'";
+    const conds = [];
+    for (const t of titles) {
+      const words = t.split(/\s+/).filter(Boolean).slice(0, 8);
+      conds.push('(' + words.map((w) => `(e.title LIKE ${lit(w)} OR e.topic LIKE ${lit(w)})`).join(' AND ') + ')');
+    }
+    // Zuordnung per CASE: der SPEZIFISCHSTE Titel zuerst (mehr Wörter, dann länger) —
+    // sonst schluckt ein kurzer Titel („Frau") Treffer eines längeren („Frau ohne Gewissen")
+    // und das 5er-Limit seiner Gruppe schneidet sie ab (Staging-Befund 24.09.).
+    const order = titles.map((t, i) => i).sort((x, y) =>
+      (titles[y].split(/\s+/).length - titles[x].split(/\s+/).length) || (titles[y].length - titles[x].length));
+    const caseSql = 'CASE ' + order.map((i) => `WHEN ${conds[i]} THEN ${i}`).join(' ') + ' END';
+    const where = ['(' + conds.join(' OR ') + ')', "lower(e.channel) NOT IN ('3sat','arte.de','srf')"];
+    const binds = [];
+    if (!p.future) { where.push('e.timestamp <= ?'); binds.push(now); }
+    if (p.duration_min > 0) { where.push('e.duration >= ?'); binds.push(p.duration_min); }
+    const sql = `SELECT * FROM (
+        SELECT x.*, ROW_NUMBER() OVER (PARTITION BY x._ti ORDER BY x.timestamp DESC) AS _rn FROM (
+          SELECT e.*, en.gattung AS _gattung, en.konfidenz AS _konfidenz, en.facets AS _facets, ${caseSql} AS _ti
+          FROM entries e LEFT JOIN enrichment en ON en.topic = e.topic
+          WHERE ${where.join(' AND ')}
+        ) x
+      ) WHERE _rn <= ?`;
+    const r = await env.INDEX_DB.prepare(sql).bind(...binds, per).all();
+    return (r.results || []).map((row) => ({ ...mapRow(row), _ti: row._ti }));
+  };
+  // MVW je Titel einzeln, aber parallel vom Server aus: eine gemeinsame OR-Anfrage
+  // würde von häufigen Titeln („Sabrina", „Eins, zwei, drei") dominiert und seltene
+  // Treffer verdrängen (Staging-Befund 24.09.). MVW ist schnell (~0,5 s) — der
+  // Engpass war der D1-Index, und der läuft oben in EINER Abfrage.
+  const mvwPart = async () => {
+    const res = await Promise.allSettled(titles.map((t) => mvwFetch({
+      queries: [{ fields: ['title', 'topic'], query: t }, ...MVW_ONLY.map((c) => ({ fields: ['channel'], query: c }))],
+      sortBy: 'timestamp', sortOrder: 'desc', future: !!p.future, offset: 0, size: per,
+      duration_min: p.duration_min || 0,
+    })));
+    if (res.every((x) => x.status !== 'fulfilled')) throw new Error('MVW-Batch fehlgeschlagen');
+    return res.flatMap((x, i) => (x.status === 'fulfilled' ? (x.value?.result?.results || []).map((r) => ({ ...r, _ti: i })) : []));
+  };
+  const [a, b] = await Promise.allSettled([d1Part(), mvwPart()]);
+  const items = [...(a.status === 'fulfilled' ? a.value : []), ...(b.status === 'fulfilled' ? b.value : [])];
+  if (a.status !== 'fulfilled' && b.status !== 'fulfilled') throw new Error('Batch fehlgeschlagen');
+  return {
+    result: { results: items, queryInfo: { totalResults: items.length, resultCount: items.length, batch: true } },
+    _backend: a.status === 'fulfilled' && b.status === 'fulfilled' ? 'hybrid' : (a.status === 'fulfilled' ? 'index-only' : 'mvw'),
+  };
 }
 
 // Entscheidet die Route. Gibt null zurück, wenn MVW komplett übernehmen soll.
@@ -171,23 +276,38 @@ async function d1Search(env, textQs, chanSpec, p, limit, offset, sortBy, sortOrd
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const from = 'FROM entries e LEFT JOIN enrichment en ON en.topic = e.topic';
 
-  const [rows, cnt] = await env.INDEX_DB.batch([
-    env.INDEX_DB.prepare(
-      `SELECT e.*, en.gattung AS _gattung, en.konfidenz AS _konfidenz, en.facets AS _facets ${from} ${whereSql} ORDER BY ${sortCol} ${ord} LIMIT ? OFFSET ?`
-    ).bind(...binds, limit, offset),
-    env.INDEX_DB.prepare(`SELECT COUNT(*) c ${from} ${whereSql}`).bind(...binds),
-  ]);
+  // Performance (Feedback 24.09., Personensuche ~60 s): D1 arbeitet Anfragen einer
+  // Datenbank nacheinander ab; ein LIKE-Scan über ~320k Zeilen kostet bis ~0,4 s.
+  // Früher lief pro Anfrage IMMER ein zweiter Voll-Scan fürs COUNT. Jetzt:
+  // weniger Treffer als das Limit → Gesamtzahl steht schon fest (kein COUNT);
+  // sonst ein gedeckeltes COUNT (bricht nach COUNT_CAP Treffern ab).
+  const COUNT_CAP = 5000;
+  const rows = await env.INDEX_DB.prepare(
+    `SELECT e.*, en.gattung AS _gattung, en.konfidenz AS _konfidenz, en.facets AS _facets ${from} ${whereSql} ORDER BY ${sortCol} ${ord} LIMIT ? OFFSET ?`
+  ).bind(...binds, limit, offset).all();
+  const got = (rows.results || []).length;
+  let total;
+  if (got < limit) {
+    total = offset + got;
+  } else {
+    const cntFrom = gattungen && gattungen.length ? from : 'FROM entries e';
+    // Ohne Textsuche ist das COUNT billig (kein LIKE) → exakt; mit Textsuche gedeckelt
+    const capSql = textQs.length ? ` LIMIT ${COUNT_CAP}` : '';
+    const cnt = await env.INDEX_DB.prepare(`SELECT COUNT(*) c FROM (SELECT 1 ${cntFrom} ${whereSql}${capSql})`).bind(...binds).first();
+    total = cnt ? cnt.c : offset + got;
+  }
 
+  return { items: (rows.results || []).map(mapRow), total };
+}
+
+function mapRow(r) {
   return {
-    items: (rows.results || []).map((r) => ({
-      channel: r.channel, topic: r.topic, title: r.title, description: r.description || '',
-      timestamp: r.timestamp, duration: r.duration,
-      url_website: r.url_website, url_video: '', url_video_hd: '',
-      available_to: r.available_to, image: r.image || '', id: r.id,
-      gattung: r._gattung ?? null, konfidenz: r._konfidenz ?? null,
-      facets: r._facets ? safeParse(r._facets) : null,
-    })),
-    total: cnt.results?.[0]?.c ?? 0,
+    channel: r.channel, topic: r.topic, title: r.title, description: r.description || '',
+    timestamp: r.timestamp, duration: r.duration,
+    url_website: r.url_website, url_video: '', url_video_hd: '',
+    available_to: r.available_to, image: r.image || '', id: r.id,
+    gattung: r._gattung ?? null, konfidenz: r._konfidenz ?? null,
+    facets: r._facets ? safeParse(r._facets) : null,
   };
 }
 
