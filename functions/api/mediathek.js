@@ -152,9 +152,11 @@ async function d1Search(env, textQs, chanSpec, p, limit, offset, sortBy, sortOrd
     for (const pre of chanSpec.prefix) { parts.push('lower(e.channel) LIKE ?'); binds.push(pre + '%'); }
     where.push('(' + parts.join(' OR ') + ')');
   } else if (!gattungen) {
-    // Nur im "Alle Sender"-Merge nötig (Dubletten mit dem MVW-Zweig vermeiden);
-    // die Gattungs-Route hat keinen MVW-Zweig und zeigt bewusst alles im Index.
-    where.push("lower(e.channel) <> '3sat'");
+    // Nur im "Alle Sender"-Merge nötig (Dubletten mit dem MVW-Zweig vermeiden):
+    // alles ausschließen, was der MVW-Zweig dort schon liefert und was inzwischen
+    // AUCH im Index steht (3sat-Streuner aus dem ZDF-Crawl, arte- und SRF-Crawl).
+    // Die Gattungs-Route hat keinen MVW-Zweig und zeigt bewusst alles im Index.
+    where.push("lower(e.channel) NOT IN ('3sat','arte.de','srf')");
   }
 
   // future:false — wie MVW mit etwas Toleranz für heutige Ausstrahlungen (MVW lässt
