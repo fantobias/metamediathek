@@ -13,7 +13,7 @@
 <meta property="og:url" content="https://metamediathek.pages.dev/">
 <meta name="theme-color" content="#0f1117">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
-<meta name="mm-build" content="2026-09-24.3">
+<meta name="mm-build" content="2026-09-24.4">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -873,6 +873,12 @@
   .pl-note { color: var(--text-dim); font-size: 12px; }
   .pl-note button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0 4px; }
   .pl-spacer { flex: 1; }
+  .pl-geo { color: var(--text-dim); font-size: 12px; background: none; border: 1px solid var(--border); border-radius: 12px; padding: 3px 9px; cursor: pointer; }
+  .pl-geo:hover { color: var(--text); border-color: var(--accent); }
+  .pl-geo.vpn { border-color: var(--accent); color: var(--text); }
+  .pl-vpn { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+  .pl-geomsg { max-width: 520px; line-height: 1.5; }
+  .pl-geomsg .pl-wait { color: var(--text-dim); font-size: 13px; margin-top: 6px; }
   .pl-ext { color: var(--text-dim); font-size: 13px; text-decoration: none; }
   .pl-ext:hover { color: var(--text); }
   /* Fortschrittsbalken auf Kacheln */
@@ -4768,6 +4774,136 @@ async function resolveZdfClient(ess, signal) {
   return variants.length ? { ok: true, source: 'zdf-client', variants, subtitles } : null;
 }
 
+
+// ─── SRF im Browser auflösen (24.4) ───
+// il.srgssr.ch erlaubt CORS für alle Origins. Weil die Anfrage aus dem Browser kommt,
+// sieht SRF den echten Standort — mit VPN also den VPN-Server (z. B. Schweiz).
+async function resolveSrfClient(ess, signal) {
+  let url;
+  try { url = new URL(ess.url_website); } catch (e) { return null; }
+  if (!/(^|\.)srf\.ch$/.test(url.hostname)) return null;
+  const urn = (String(ess.id || '').startsWith('urn:srf:') ? ess.id : '') || url.searchParams.get('urn') || '';
+  if (!urn) return null;
+  const r = await fetch(`https://il.srgssr.ch/integrationlayer/2.0/mediaComposition/byUrn/${encodeURIComponent(urn)}.json`, { signal });
+  if (!r.ok) return null;
+  const d = await r.json();
+  const ch = (d.chapterList || []).find(c => c.urn === urn) || (d.chapterList || [])[0];
+  if (!ch) return null;
+  if (ch.blockReason) {
+    if (/GEO/i.test(ch.blockReason)) return { ok: false, blocked: 'geo', country: 'CH', message: 'Dieses Video gibt SRF nur in der Schweiz frei.' };
+    return { ok: false, blocked: 'other', message: /ENDDATE/i.test(ch.blockReason) ? 'Dieses Video ist bei SRF nicht mehr verfügbar.' : 'SRF gibt dieses Video derzeit nicht frei.' };
+  }
+  const res = (ch.resourceList || []).filter(x => !x.drmList || !x.drmList.length);
+  const hls = res.filter(x => x.streaming === 'HLS').sort((a, b) => (b.quality === 'HD') - (a.quality === 'HD'))[0];
+  const mp4 = res.filter(x => x.streaming === 'PROGRESSIVE').map(x => ({ q: x.quality === 'HD' ? 'HD' : 'SD', url: (x.url || '').replace(/^http:/, 'https:') }));
+  let hlsUrl = hls ? hls.url : '';
+  let hlsToken = '';
+  // Geschützte Streams brauchen ein kurzlebiges Akamai-Token (tp.srgssr.ch, CORS offen)
+  if (hls && hls.tokenType && hls.tokenType !== 'NONE') {
+    try {
+      const t = await (await fetch('https://tp.srgssr.ch/akahd/token?acl=*', { signal })).json();
+      hlsToken = (t && t.token && t.token.authparams) || '';
+      if (hlsToken) hlsUrl += (hlsUrl.includes('?') ? '&' : '?') + hlsToken;
+    } catch (e) {}
+  }
+  const subtitles = (ch.subtitleList || []).filter(x => x.format === 'VTT').map(x => ({
+    lang: (x.locale || 'de').slice(0, 2), label: x.locale === 'de' ? 'Deutsch' : (x.locale || 'Untertitel'),
+    url: '/api/stream?sub=' + encodeURIComponent(x.url)
+  }));
+  if (!hlsUrl && !mp4.length) return null;
+  return { ok: true, source: 'srf-client', variants: [{ id: 'standard', label: 'Standard', hls: hlsUrl, mp4 }], subtitles, hlsToken };
+}
+
+// ─── Standort & VPN (24.4) ───
+const GEO_NAMES = { DE: ['Deutschland', 'in Deutschland'], CH: ['Schweiz', 'in der Schweiz'], AT: ['Österreich', 'in Österreich'], FR: ['Frankreich', 'in Frankreich'] };
+function geoName(cc, form) { const n = GEO_NAMES[cc]; return n ? (form === 'in' ? n[1] : n[0]) : (form === 'in' ? 'in ' + cc : cc); }
+// Welches Land braucht dieser Beitrag? (Sender-Regel; bei ARD/ZDF & Co. Deutschland)
+function geoNeedFor(ess) {
+  const ch = String((ess && ess.channel) || '').toLowerCase();
+  const host = (() => { try { return new URL(ess.url_website).hostname; } catch (e) { return ''; } })();
+  if (ch === 'srf' || /srf\.ch$/.test(host)) return 'CH';
+  if (ch === 'orf' || /orf\.at$/.test(host)) return 'AT';
+  return 'DE';
+}
+let geoCache = { cc: '', t: 0 };
+async function detectGeo(force) {
+  if (!force && geoCache.cc && Date.now() - geoCache.t < 60000) return geoCache.cc;
+  try {
+    const txt = await (await fetch('/cdn-cgi/trace?nc=' + Date.now(), { cache: 'no-store' })).text();
+    const m = txt.match(/^loc=([A-Z]{2})$/m);
+    geoCache = { cc: m ? m[1] : '', t: Date.now() };
+  } catch (e) { geoCache = { cc: '', t: Date.now() }; }
+  return geoCache.cc;
+}
+async function plRefreshGeo(force) {
+  const cc = await detectGeo(force);
+  PL.geo = cc;
+  const b = document.getElementById('plGeo');
+  if (b) {
+    b.textContent = cc ? 'Standort: ' + geoName(cc) : 'Standort unbekannt';
+    b.classList.toggle('vpn', !!cc && cc !== 'DE');
+  }
+  return cc;
+}
+function plSetVpnMode(on) {
+  savePlayerPrefs({ vpn: !!on });
+  const cb = document.getElementById('plVpn');
+  if (cb) cb.checked = !!on;
+  if (PL.geoNeed) plGeoBlocked(PL.geoNeed, PL.geoMsg); // Meldung im neuen Modus neu aufbauen
+}
+function plStopGeoWait() {
+  if (PL.geoTimer) { clearInterval(PL.geoTimer); PL.geoTimer = null; }
+  PL.geoNeed = null; PL.geoMsg = null;
+}
+function plRetry() {
+  const ess = PL.ess;
+  if (!ess) return;
+  plStopGeoWait();
+  if (window.mmTrack) window.mmTrack('player_geo_retry', { ch: ess.channel, geo: PL.geo || '' });
+  openPlayer(ess);
+}
+function plGeoBlocked(need, message) {
+  const ess = PL.ess;
+  if (!ess) return;
+  const v = plVideo();
+  if (v) { try { v.pause(); } catch (e) {} }
+  if (PL.geoTimer) { clearInterval(PL.geoTimer); PL.geoTimer = null; }
+  PL.geoNeed = need; PL.geoMsg = message;
+  const vpn = !!loadPlayerPrefs().vpn;
+  const here = PL.geo;
+  // Standort passt schon → per VPN nicht lösbar (z. B. arte sperrt den Cloudflare-Server)
+  if (here && here === need) { plStopGeoWait(); plFail(message || 'Der Sender gibt dieses Video derzeit nicht frei.', 'geo-same'); return; }
+  const links = [`<button class="btn btn-primary" onclick="plRetry()">Erneut versuchen</button>`];
+  if (ess.url_website) links.push(`<a class="btn btn-secondary" href="${escAttr(ess.url_website)}" target="_blank" rel="noopener">Beim Sender ansehen ↗</a>`);
+  const hint = vpn
+    ? `Stell deinen VPN (z. B. NordVPN) auf <b>${escHtml(geoName(need))}</b> — der Player spielt automatisch weiter, sobald der neue Standort erkannt ist.`
+    : `Mit einem VPN-Dienst auf ${escHtml(geoName(need))} lässt sich das oft trotzdem abspielen. <a href="#" onclick="event.preventDefault(); plSetVpnMode(true)">VPN-Modus einschalten</a>`;
+  plMsg(`<div class="pl-geomsg">
+      <div><b>${escHtml(message || ('Nur ' + geoName(need, 'in') + ' abrufbar.'))}</b></div>
+      <div>Dein Standort laut Sender-Sicht: ${escHtml(here ? geoName(here) : 'unbekannt')}.</div>
+      <div style="margin-top:6px">${hint}</div>
+      ${vpn ? '<div class="pl-wait" id="plWait">Warte auf Standortwechsel …</div>' : ''}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">${links.join('')}</div>`);
+  if (window.mmTrack) window.mmTrack('player_geo_block', { ch: ess.channel, need, geo: here || '' });
+  if (vpn) {
+    const started = Date.now();
+    const token = PL.token;
+    PL.geoTimer = setInterval(async () => {
+      if (token !== PL.token || !PL.geoNeed) { clearInterval(PL.geoTimer); PL.geoTimer = null; return; }
+      if (Date.now() - started > 5 * 60000) {
+        clearInterval(PL.geoTimer); PL.geoTimer = null;
+        const w = document.getElementById('plWait'); if (w) w.textContent = 'Kein Standortwechsel erkannt — „Erneut versuchen" startet neu.';
+        return;
+      }
+      const cc = await plRefreshGeo(true);
+      const w = document.getElementById('plWait');
+      if (w) w.textContent = 'Warte auf Standortwechsel … (aktuell: ' + (cc ? geoName(cc) : 'unbekannt') + ')';
+      if (cc && cc === PL.geoNeed) plRetry();
+    }, 4000);
+  }
+}
+
 let hlsLoadP = null;
 function loadHlsJs() {
   if (window.Hls) return Promise.resolve(window.Hls);
@@ -4835,12 +4971,16 @@ function openPlayer(ess) {
       </select></label>
       <span class="pl-note" id="plNote"></span>
       <span class="pl-spacer"></span>
+      <label class="pl-vpn" title="Bei gesperrten Inhalten auf einen Standortwechsel per VPN warten und automatisch weiterspielen"><input type="checkbox" id="plVpn" onchange="plSetVpnMode(this.checked)"> VPN-Modus</label>
+      <button class="pl-geo" id="plGeo" onclick="plRefreshGeo(true)" title="Dein Standort, wie ihn die Sender sehen (bei VPN: der VPN-Server). Klicken zum Aktualisieren.">Standort …</button>
       ${ess.url_website ? `<a class="pl-ext" href="${escAttr(ess.url_website)}" target="_blank" rel="noopener">Beim Sender ansehen ↗</a>` : ''}
     </div>`;
   el.hidden = false;
   document.body.classList.add('player-open');
   const prefs = loadPlayerPrefs();
   document.getElementById('plRate').value = String(prefs.rate || 1);
+  document.getElementById('plVpn').checked = !!prefs.vpn;
+  plRefreshGeo(true);
   const video = plVideo();
   video.addEventListener('timeupdate', plOnTime);
   video.addEventListener('pause', () => plSaveProgress(true));
@@ -4863,10 +5003,16 @@ function openPlayer(ess) {
     body: JSON.stringify({ url_website: ess.url_website, id: ess.id, channel: ess.channel, url_video: ess.url_video, url_video_hd: ess.url_video_hd, url_subtitle: ess.url_subtitle, alts: ess.alts })
   }).then(r => r.ok ? r.json() : null).catch(() => null);
   resolveZdfClient(ess, ctrl.signal).catch(() => null)
-    .then(d => (d && d.ok) ? d : viaServer())
+    .then(d => (d && d.ok) ? d : resolveSrfClient(ess, ctrl.signal).catch(() => null))
+    .then(d => (d && (d.ok || d.blocked === 'geo')) ? d : viaServer())
     .then(data => {
     clearTimeout(to);
     if (token !== PL.token) return; // inzwischen geschlossen/anderes Video
+    if (data && data.blocked === 'geo') {
+      // Standort frisch prüfen (VPN kann gerade umgeschaltet worden sein), dann Meldung
+      plRefreshGeo(true).then(() => { if (token === PL.token) plGeoBlocked(data.country || geoNeedFor(ess), data.message); });
+      return;
+    }
     if (!data || !data.ok || !Array.isArray(data.variants) || !data.variants.length) {
       plFail(data && data.message, data ? (data.blocked || 'unresolved') : 'api');
       return;
@@ -4938,7 +5084,9 @@ async function plLoadVariant(id, startAt, autoplay) {
       if (token !== PL.token) return;
     }
     if (Hls && Hls.isSupported()) {
-      const hls = new Hls({ capLevelToPlayerSize: true, maxBufferLength: 30, startLevel: -1 });
+      const tok = PL.data && PL.data.hlsToken;
+      const hls = new Hls({ capLevelToPlayerSize: true, maxBufferLength: 30, startLevel: -1,
+        xhrSetup: tok ? (xhr, url) => { if (!/[?&]hdnt[sl]=/.test(url) && /srf|akamaized/.test(url)) xhr.open('GET', url + (url.includes('?') ? '&' : '?') + tok, true); } : undefined });
       PL.hls = hls;
       hls.on(Hls.Events.MANIFEST_PARSED, () => plBuildQualityFromHls());
       hls.on(Hls.Events.ERROR, (evt, data) => {
@@ -4966,6 +5114,11 @@ function plTryMp4(startAt, why) {
   const v = PL.variant;
   const video = plVideo();
   if (!v || !v.mp4 || !v.mp4.length || PL.triedMp4 && PL.mp4Idx >= v.mp4.length - 1) {
+    const need = geoNeedFor(PL.ess);
+    if (need !== 'DE' && /^(media|hls)/.test(String(why)) && PL.geo && PL.geo !== need) {
+      plGeoBlocked(need, 'Die Videodatei wurde nicht ausgeliefert — vermutlich nur ' + geoName(need, 'in') + ' abrufbar.');
+      return;
+    }
     plFail('Dieses Video lässt sich hier leider nicht abspielen.', why);
     return;
   }
@@ -5090,6 +5243,7 @@ function plSaveProgress(force, ended) {
 function closePlayer(silent) {
   const el = plEl();
   if (!el || el.hidden) return;
+  plStopGeoWait();
   plSaveProgress(true);
   PL.token++;
   const video = plVideo();
