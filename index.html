@@ -13,7 +13,7 @@
 <meta property="og:url" content="https://metamediathek.pages.dev/">
 <meta name="theme-color" content="#0f1117">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"MetaMediathek","url":"https://metamediathek.pages.dev/","potentialAction":{"@type":"SearchAction","target":"https://metamediathek.pages.dev/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
-<meta name="mm-build" content="2026-09-24.2">
+<meta name="mm-build" content="2026-09-24.3">
 <title>MetaMediathek – Alle deutschen Mediatheken auf einen Blick</title>
 <style>
   :root {
@@ -4718,6 +4718,56 @@ function playStored(key, src) {
   });
 }
 
+// ZDF direkt im Browser auflösen: api.zdf.de liefert Cloudflare-Functions HTTP 500
+// (Befund 24.09. im Staging), erlaubt aber CORS für unseren Origin. Öffentliche
+// Web-Tokens aus www.zdf.de — dieselben, die der ZDF-Player im Browser nutzt.
+const ZDF_WEB_TOKENS = ['aa3noh4ohz9eeboo8shiesheec9ciequ9Quah7el', 'ahBaeMeekaiy5ohsai4bee4ki6Oopoi5quailieb'];
+async function zdfGetClient(url, signal) {
+  let last;
+  for (const t of ZDF_WEB_TOKENS) {
+    try {
+      const r = await fetch(url, { headers: { 'Api-Auth': 'Bearer ' + t }, signal });
+      if (r.ok) return await r.json();
+      last = new Error('HTTP ' + r.status);
+    } catch (e) { last = e; if (e.name === 'AbortError') throw e; }
+  }
+  throw last;
+}
+async function resolveZdfClient(ess, signal) {
+  let url;
+  try { url = new URL(ess.url_website); } catch (e) { return null; }
+  if (!/(^|\.)zdf\.de$/.test(url.hostname)) return null;
+  const seg = url.pathname.replace(/\.html$/, '').split('/').filter(Boolean).pop();
+  const canonical = /^[a-z0-9-]+$/.test(ess.id || '') ? ess.id : seg;
+  if (!canonical) return null;
+  const doc = await zdfGetClient(`https://api.zdf.de/content/documents/${encodeURIComponent(canonical)}.json?profile=player2`, signal);
+  const tpl = doc && doc.mainVideoContent && doc.mainVideoContent['http://zdf.de/rels/target'] && doc.mainVideoContent['http://zdf.de/rels/target']['http://zdf.de/rels/streams/ptmd-template'];
+  if (!tpl) return null;
+  const p = await zdfGetClient('https://api.zdf.de' + tpl.replace('{playerId}', 'ngplayer_2_4'), signal);
+  const QRANK = { uhd: 6, fhd: 5, hd: 4, veryhigh: 3, high: 2, med: 1, low: 0, auto: 7 };
+  const QLBL = { uhd: 'UHD', fhd: 'Full HD', hd: 'HD', veryhigh: 'Sehr hoch', high: 'Hoch', med: 'Mittel', low: 'Niedrig' };
+  const LBL = { standard: 'Standard', ad: 'Audiodeskription', ot: 'Originalton', ks: 'Klare Sprache', dgs: 'Gebärdensprache' };
+  const byClass = new Map();
+  for (const pl of p.priorityList || []) for (const f of pl.formitaeten || []) {
+    const isHls = /mpegurl/i.test(f.mimeType || ''), isMp4 = /video\/mp4/i.test(f.mimeType || '');
+    if (!isHls && !isMp4) continue;
+    for (const q of f.qualities || []) for (const t of (q.audio && q.audio.tracks) || []) {
+      const cls = t.class === 'main' ? 'standard' : t.class;
+      if (!byClass.has(cls)) byClass.set(cls, { id: cls, label: LBL[cls] || cls, hls: '', r: -1, mp4: [] });
+      const v = byClass.get(cls), rank = QRANK[q.quality] ?? 0;
+      if (isHls && rank > v.r) { v.hls = t.uri; v.r = rank; }
+      if (isMp4) v.mp4.push({ q: QLBL[q.quality] || q.quality, rank, url: t.uri });
+    }
+  }
+  const variants = [...byClass.values()].map(v => ({ id: v.id, label: v.label, hls: v.hls, mp4: v.mp4.sort((a, b) => b.rank - a.rank).map(({ q, url }) => ({ q, url })) }))
+    .sort((a, b) => (a.id === 'standard' ? -1 : b.id === 'standard' ? 1 : 0));
+  const subtitles = (p.captions || []).filter(c => /vtt/i.test(c.format || '')).map(c => ({
+    lang: (c.language || 'deu').slice(0, 2), label: c.class === 'hoh' ? 'Deutsch (für Hörgeschädigte)' : 'Deutsch',
+    url: '/api/stream?sub=' + encodeURIComponent(c.uri)
+  }));
+  return variants.length ? { ok: true, source: 'zdf-client', variants, subtitles } : null;
+}
+
 let hlsLoadP = null;
 function loadHlsJs() {
   if (window.Hls) return Promise.resolve(window.Hls);
@@ -4808,10 +4858,13 @@ function openPlayer(ess) {
 
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), STREAM_TIMEOUT_MS);
-  fetch('/api/stream', {
+  const viaServer = () => fetch('/api/stream', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
     body: JSON.stringify({ url_website: ess.url_website, id: ess.id, channel: ess.channel, url_video: ess.url_video, url_video_hd: ess.url_video_hd, url_subtitle: ess.url_subtitle, alts: ess.alts })
-  }).then(r => r.ok ? r.json() : null).catch(() => null).then(data => {
+  }).then(r => r.ok ? r.json() : null).catch(() => null);
+  resolveZdfClient(ess, ctrl.signal).catch(() => null)
+    .then(d => (d && d.ok) ? d : viaServer())
+    .then(data => {
     clearTimeout(to);
     if (token !== PL.token) return; // inzwischen geschlossen/anderes Video
     if (!data || !data.ok || !Array.isArray(data.variants) || !data.variants.length) {
