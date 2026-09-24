@@ -45,7 +45,7 @@ export async function onRequestPost(context) {
   try {
     const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bodyText));
     const hex = [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
-    cacheKey = new Request('https://mm-cache.local/mediathek/v1/' + hex);
+    cacheKey = new Request('https://mm-cache.local/mediathek/v2/' + hex);
     const hit = await caches.default.match(cacheKey);
     if (hit) {
       return new Response(hit.body, { status: 200, headers: {
@@ -104,13 +104,15 @@ async function titleBatchQuery(env, p) {
 
   const d1Part = async () => {
     if (!env || !env.INDEX_DB) return [];
-    const conds = [], condBinds = [];
+    // Suchwörter als SQL-Literale statt gebundener Parameter: D1 erlaubt höchstens 100
+    // Parameter pro Abfrage — 10 Titel × Wörter × 2 Felder × (CASE + WHERE) sprengten
+    // das, die Abfrage schlug fehl und der Index-Teil fehlte still (Staging-Befund 24.09.).
+    // Sicher, weil SQLite in String-Literalen nur ' maskiert ('' ) — keine Backslash-Escapes.
+    const lit = (w) => "'%" + String(w).replace(/'/g, "''") + "%'";
+    const conds = [];
     for (const t of titles) {
       const words = t.split(/\s+/).filter(Boolean).slice(0, 8);
-      conds.push('(' + words.map(() => '(e.title LIKE ? OR e.topic LIKE ?)').join(' AND ') + ')');
-      const b = [];
-      for (const w of words) b.push(`%${w}%`, `%${w}%`);
-      condBinds.push(b);
+      conds.push('(' + words.map((w) => `(e.title LIKE ${lit(w)} OR e.topic LIKE ${lit(w)})`).join(' AND ') + ')');
     }
     // Zuordnung per CASE: der SPEZIFISCHSTE Titel zuerst (mehr Wörter, dann länger) —
     // sonst schluckt ein kurzer Titel („Frau") Treffer eines längeren („Frau ohne Gewissen")
@@ -119,7 +121,7 @@ async function titleBatchQuery(env, p) {
       (titles[y].split(/\s+/).length - titles[x].split(/\s+/).length) || (titles[y].length - titles[x].length));
     const caseSql = 'CASE ' + order.map((i) => `WHEN ${conds[i]} THEN ${i}`).join(' ') + ' END';
     const where = ['(' + conds.join(' OR ') + ')', "lower(e.channel) NOT IN ('3sat','arte.de','srf')"];
-    const binds = [...order.flatMap((i) => condBinds[i]), ...condBinds.flat()];
+    const binds = [];
     if (!p.future) { where.push('e.timestamp <= ?'); binds.push(now); }
     if (p.duration_min > 0) { where.push('e.duration >= ?'); binds.push(p.duration_min); }
     const sql = `SELECT * FROM (
