@@ -16,7 +16,7 @@ const SOURCES = [
   { id: 'filmdienst', name: 'filmdienst', home: 'https://www.filmdienst.de/heimkino/tv-mediatheken', feed: 'https://www.filmdienst.de/rss/mediatheken', max: 20 },
   { id: 'perlen', name: 'Mediathekperlen', home: 'https://nexxtpress.de/author/mediathekperlen/', feed: 'https://nexxtpress.de/author/mediathekperlen/feed/', max: 28 },
 ];
-const CACHE_KEY = 'https://mm-cache.local/tipps/v1';
+const CACHE_KEY = 'https://mm-cache.local/tipps/v2';
 const FRESH_MS = 3 * 3600 * 1000;
 const MIN_DURATION = 25 * 60; // Trailer/Clips raus, Dokus (ab ~30 min) bleiben drin
 
@@ -100,6 +100,8 @@ export function tkey(s) {
 }
 const VARIANT_RE = /\s*\((mit\s+)?(untertiteln?|audiodeskription|h(ö|oe)rfassung|originalversion|originalfassung|original|omu|ov|dgs|geb(ä|ae)rdensprache|leichte\s+sprache|englisch|english|franz(ö|oe)sisch)[^)]*\)\s*$/i;
 function isVariant(title) { return VARIANT_RE.test(title || ''); }
+// Fassung mit Audiodeskription steckt bei 3sat/ZDF oft nur im Dateinamen ("…_mit_ad_…")
+function variantRank(r) { return (isVariant(r.title) ? 2 : 0) + (/_mit_ad_|audiodeskription/i.test(String(r.url_video || '')) ? 1 : 0); }
 // Passt der Sendungstitel zum Tipp? Exakt, oder der Tipp-Titel gefolgt von einem
 // Trenner (" - Spielfilm, USA 1974", " (Audiodeskription)", " | …"). SRF: «Titel» – …
 export function titleMatches(tippKey, itemTitle) {
@@ -124,14 +126,30 @@ function pickMatch(tipp, pool) {
   if (tipp.serie) {
     c = pool.filter((r) => tkey(r.topic) === k || titleMatches(k, r.topic));
     // Serie: älteste Folge zuerst (meist Folge 1)
-    c.sort((a, b) => (isVariant(a.title) - isVariant(b.title)) || ((a.timestamp || 0) - (b.timestamp || 0)));
+    c.sort((a, b) => (variantRank(a) - variantRank(b)) || ((a.timestamp || 0) - (b.timestamp || 0)));
   } else {
     c = pool.filter((r) => (r.duration || 0) >= MIN_DURATION && titleMatches(k, r.title) && yearOk(tipp, r));
-    c.sort((a, b) => (isVariant(a.title) - isVariant(b.title)) || ((b.timestamp || 0) - (a.timestamp || 0)));
+    c.sort((a, b) => (variantRank(a) - variantRank(b)) || ((b.timestamp || 0) - (a.timestamp || 0)));
   }
   return c[0] || null;
 }
 const KEEP = ['channel', 'topic', 'title', 'timestamp', 'duration', 'url_website', 'url_video', 'url_video_hd', 'url_video_low', 'url_subtitle', 'id', 'image', 'available_to'];
+
+async function tmdbImage(env, t) {
+  if (!env || !env.TMDB_API_KEY) return undefined;
+  try {
+    const kind = t.serie ? 'tv' : 'movie';
+    const u = new URL('https://api.themoviedb.org/3/search/' + kind);
+    u.searchParams.set('api_key', env.TMDB_API_KEY);
+    u.searchParams.set('language', 'de-DE');
+    u.searchParams.set('query', t.title);
+    if (t.year) u.searchParams.set(kind === 'tv' ? 'first_air_date_year' : 'year', String(t.year));
+    const d = JSON.parse(await fetchText(u.toString(), 5000));
+    const hit = (d.results || []).find((r) => tkey(r.title || r.name) === tkey(t.title) || tkey(r.original_title || r.original_name) === tkey(t.title));
+    const p = hit && (hit.backdrop_path || hit.poster_path);
+    return p ? 'https://image.tmdb.org/t/p/w500' + p : undefined;
+  } catch (e) { return undefined; }
+}
 
 async function build(env) {
   const srcState = {};
@@ -172,6 +190,12 @@ async function build(env) {
       items.push({ title: t.title, year: t.year || null, serie: t.serie, date: t.date, refs: t.refs, item });
     }
   });
+  // Bild für Treffer ohne Sender-Bild (3sat-Seiten liefern oft kein og:image):
+  // TMDB-Szenenbild (16:9) über Titel + Jahr. Fail-soft — ohne Key/Treffer bleibt der Platzhalter.
+  const needImg = items.filter((x) => !x.item.image).slice(0, 20);
+  for (let i = 0; i < needImg.length; i += 6) {
+    await Promise.all(needImg.slice(i, i + 6).map(async (x) => { x.img = await tmdbImage(env, x); }));
+  }
   return JSON.stringify({
     built: Date.now(),
     sources: SOURCES.map((s) => ({ id: s.id, name: s.name, home: s.home, read: srcState[s.id] })),
